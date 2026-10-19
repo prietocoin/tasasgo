@@ -1,0 +1,15 @@
+# Credenciales reales: solo se versiona la plantilla .env.example.
+.env
+.env.local
+
+# Binarios y artefactos de compilación.
+*.exe
+*.test
+*.out
+
+# Salida de cobertura y perfiles.
+*.prof
+coverage.out
+
+# Temporales de la auditoría de líneas.
+audit.txt
