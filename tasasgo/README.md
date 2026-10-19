@@ -625,6 +625,10 @@ El panel web sigue en Node y no se levanta aquí, así que `docker compose up` n
 3002. Si lo necesitas mientras pruebas, arráncalo aparte (`cd old && npm start`): el stack **sí**
 expone Postgres en `127.0.0.1:5432` justamente para que ese proceso lo alcance.
 
+Ese panel ya no consulta la base de datos: reenvía todo `/api` al servicio Go con el proxy
+`old/src/proxy/api-proxy.js`, y toma el destino de `API_URL` (`http://localhost:3003` si no está
+definida). Con eso Node queda como servidor de frontend e imágenes, que es el estado final buscado.
+
 ### Comprobar que quedó en pie
 
 ```bash
