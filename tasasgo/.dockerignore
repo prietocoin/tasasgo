@@ -1,0 +1,20 @@
+# Qué NO entra al contexto de compilación de TasasGo.
+
+# Credenciales reales. Una capa de imagen conserva lo que se copió aunque el
+# archivo se borre después, así que el .env no debe llegar nunca al constructor.
+.env
+.env.local
+
+# El repositorio no aporta nada a la compilación y pesa más que el código.
+.git
+.gitignore
+
+# Artefactos locales: dentro de la imagen se recompilan desde cero.
+*.exe
+*.test
+*.out
+
+# Documentación y utilidades de desarrollo.
+README.md
+REPLANTEO_ARQUITECTURA_V2.md
+scripts/

@@ -3,9 +3,9 @@
 Servicio HTTP en Go (Fiber v2) que reemplaza de forma incremental el backend Node/Express de
 TasasHub: la Fase 1 dejó el esqueleto (configuración, base de datos, cliente de Evolution API y
 `/health`), la Fase 2 portó el calculador, la Fase 3 la capa de datos, la Fase 4 el renderer, la
-Fase 5 los doce endpoints de `/api/v1/tasas` con su concurrencia, y la Fase 6 el cliente del origen
-HOO y el middleware de seguridad. Hasta el final de la migración el frontend y el renderer PNG siguen
-siendo del proyecto Node.
+Fase 5 los doce endpoints de `/api/v1/tasas` con su concurrencia, la Fase 6 el cliente del origen
+HOO y el middleware de seguridad, y la Fase 7 la imagen Docker y el entorno orquestado. Hasta el
+final de la migración el frontend y el renderer PNG siguen siendo del proyecto Node.
 
 > **Documento de arquitectura:** `REPLANTEO_ARQUITECTURA_V2.md`
 > **Plan de origen:** `PLAN_FASE1.md` · **Diagnóstico:** `DIAGNOSTICO_MIGRACION.md`
@@ -22,7 +22,7 @@ siendo del proyecto Node.
 | **F4** | Renderer tras interfaz (`renderer/`) + cliente del sidecar Node | ✅ Implementada |
 | **F5** | Los 12 endpoints de `/api/v1/tasas` + concurrencia | ✅ Implementada |
 | **F6** | Cliente HOO + middleware de seguridad | ✅ Implementada |
-| F7 | Docker multi-stage + tzdata | Pendiente |
+| **F7** | Docker multi-stage + tzdata | ✅ Implementada |
 
 El frontend y el renderer PNG **siguen siendo servidos por el proyecto Node** durante toda la
 migración.
@@ -34,6 +34,8 @@ migración.
 - **Go 1.27 o superior** (`go version`)
 - **PostgreSQL** accesible (mismas credenciales que usa hoy el servicio Node)
 - **Node.js** solo si vas a levantar el renderer (Fase 4+)
+- **Docker y Compose v2** solo si vas a levantar el entorno completo de una vez (ver
+  *Docker: el entorno completo*)
 - Opcional: [`golangci-lint`](https://golangci-lint.run/) si quieres análisis estático adicional a `go vet`
 
 ---
@@ -98,6 +100,8 @@ go run ./cmd/evoprobe
 ```text
 tasasgo/
 ├── go.mod                                  Definición del módulo y dependencias
+├── Dockerfile                              Imagen scratch multi-stage, sin root
+├── .dockerignore                           Lo que no entra al contexto de compilación
 ├── .env.example                            Plantilla de variables de entorno (sin secretos)
 ├── README.md                               Este documento
 ├── scripts/
@@ -564,6 +568,107 @@ borrarla o no borrarla daría exactamente el mismo resultado observable.
 
 ---
 
+## Docker: el entorno completo (Fase 7)
+
+Un solo comando levanta base de datos, renderer y servicio Go desde la **raíz del repositorio**:
+
+```bash
+docker compose up --build
+```
+
+```text
+Tasashub/                     raíz del repositorio
+├── .gitignore                Protege el .env que Compose lee para sustituir variables
+├── docker-compose.yml        Orquesta los tres servicios y su red interna
+├── old/                      Proyecto Node (frontend y renderer PNG)
+│   ├── Dockerfile            Se reutiliza cambiando el comando a npm run renderer
+│   └── .dockerignore         Excluye node_modules del contexto de compilación
+└── tasasgo/                  Servicio Go
+    ├── Dockerfile            Imagen scratch multi-stage, sin root
+    └── .dockerignore
+```
+
+### Qué se levanta
+
+| Servicio | Origen | Puerto publicado | Rol |
+|---|---|---|---|
+| `postgres` | `postgres:16-alpine` | `127.0.0.1:5432` | Base `automat`, con el volumen `datos-postgres`. |
+| `renderer-sidecar` | `./old` + `npm run renderer` | `127.0.0.1:3090` | Renderer PNG en Node (Satori + Resvg). |
+| `tasasgo` | `./tasasgo` | `127.0.0.1:3003` | El servicio Go. |
+
+Los tres puertos se publican **solo en `127.0.0.1`**: es un entorno de desarrollo, con contraseña
+conocida y sin TLS, así que no se expone a la red local. Para abrirlo a la red, quita el prefijo en
+`docker-compose.yml`.
+
+### Cómo se hablan entre sí
+
+Los servicios se referencian por **nombre de servicio**, nunca por `localhost`: dentro de un
+contenedor, `localhost` es el propio contenedor. De ahí `DB_HOST=postgres` y
+`RENDERER_URL=http://renderer-sidecar:3090`.
+
+`tasasgo` espera a que Postgres esté **sano** (`condition: service_healthy`, con una sonda
+`pg_isready`). Sin eso el arranque en frío se caería: el servicio aborta si la base no responde al
+iniciar, y en los primeros segundos Postgres todavía está inicializando su directorio de datos.
+
+### La base arranca vacía
+
+El volumen empieza sin tablas: `/health` responde igual (`"database":"ok"`), pero los endpoints
+fallan hasta que cargues el esquema. Desde un respaldo:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d automat < respaldo.sql
+```
+
+### El frontend no forma parte del stack
+
+El panel web sigue en Node y no se levanta aquí, así que `docker compose up` no publica el puerto
+3002. Si lo necesitas mientras pruebas, arráncalo aparte (`cd old && npm start`): el stack **sí**
+expone Postgres en `127.0.0.1:5432` justamente para que ese proceso lo alcance.
+
+### Comprobar que quedó en pie
+
+```bash
+curl http://localhost:3003/health
+# {"status":"OK","service":"TasasHub Engine ⚡","instance":"Glauk","database":"ok","simulated":true,...}
+```
+
+Si `EVOLUTION_API_URL` quedó vacío —el caso por defecto—, `"simulated":true` y **no se envía nada a
+ningún grupo real**. Para apuntar a WhatsApp real, define las variables en un `.env` en la raíz o en
+el entorno antes de levantar el stack.
+
+### La imagen de Go
+
+```dockerfile
+FROM golang:1.27-alpine AS builder   # compila
+FROM scratch                          # ejecuta
+```
+
+- **Binario estático**: `CGO_ENABLED=0` y `-ldflags="-s -w"`. El resultado se verificó como ELF
+  x86-64 **sin intérprete dinámico** y sin referencia a glibc, que es lo que `scratch` exige.
+- **Sin root**: el proceso corre como `10001:10001`. Al no haber shell, tampoco hay escalada local
+  que intentar. El precio es que no puedes `docker exec` para depurar; el diagnóstico se hace por
+  logs.
+- **Zona horaria**: `America/Caracas` viaja **embebida en el binario** (`_ "time/tzdata"` en
+  `cmd/server/main.go`), no depende del sistema operativo. En `scratch` no existe
+  `/usr/share/zoneinfo`: sin ese import, resolver la zona falla y las horas caen a UTC **en
+  silencio**.
+- **Certificados TLS**: se copia el bundle de `ca-certificates` de la etapa de compilación. Sin él,
+  toda llamada HTTPS a Evolution y a HOO fallaría.
+- **Multi-arquitectura**: `GOOS` y `GOARCH` salen de `TARGETOS`/`TARGETARCH`, con `linux/amd64` por
+  defecto, así que el mismo Dockerfile compila en un Mac ARM sin editarlo.
+
+### Por qué el renderer sigue siendo Node
+
+`renderer-sidecar` reutiliza el `old/Dockerfile` cambiando el comando. Reescribir la plantilla de la
+cartelera en Go cambiaría el PNG byte a byte: la fidelidad verificada en la Fase 4 (mismo SHA-256)
+depende de Satori y Resvg, no de nosotros.
+
+`old/.dockerignore` no es cosmético: el Dockerfile de Node hace `COPY . .` **después** de
+`npm install`, así que sin él los `node_modules` del equipo (1 088 archivos, con binarios nativos de
+Windows) se copiarían encima de las dependencias Linux recién instaladas.
+
+---
+
 ## Reglas de arquitectura (NO NEGOCIABLES)
 
 Estas tres reglas se verifican con herramientas, no con buena voluntad.
@@ -625,6 +730,17 @@ go build ./...             # Debe compilar
 go test ./...              # Debe pasar
 .\scripts\check-file-length.ps1
 ```
+
+### Cumplimiento medido al cerrar la Fase 7
+
+| Regla | Cómo se comprueba | Resultado |
+|---|---|---|
+| SRP: un archivo, una razón de cambio | Revisión por eje de cambio; un paquete se parte cuando el motivo para cambiar difiere | 63 archivos `.go`, cada uno con un único motivo |
+| Límite 30–60 líneas en producción y ≤100 en pruebas | `.\scripts\check-file-length.ps1` | exit 0, los 63 dentro de rango |
+| Doc Comments con la intención (el porqué) | Comentario en todo `package`, `type` y función exportada | Sin pendientes |
+| Sin estado global | `Config` y `Deps` se inyectan por parámetro | Ningún `os.Getenv` fuera de `internal/config` |
+| Formato y análisis estático | `gofmt -l .` · `go vet ./...` · `go build ./...` | Los tres, limpios |
+| Pruebas | `go test ./...` | 21 pruebas en 7 paquetes, ninguna falla |
 
 ---
 

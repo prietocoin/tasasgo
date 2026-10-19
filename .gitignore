@@ -1,0 +1,4 @@
+# Compose lee automáticamente el archivo .env de esta carpeta para sustituir las
+# variables del stack. Si lo usas para credenciales reales, no debe versionarse.
+.env
+.env.local

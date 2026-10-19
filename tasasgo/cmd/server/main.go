@@ -9,6 +9,11 @@ import (
 	"context"
 	"log"
 
+	// Embebe la base de zonas horarias dentro del binario. La imagen final es
+	// scratch y no lleva /usr/share/zoneinfo: sin esta importación, resolver
+	// America/Caracas falla y toda hora local cae en silencio a UTC.
+	_ "time/tzdata"
+
 	"github.com/gofiber/fiber/v2"
 
 	"tasasgo/internal/config"

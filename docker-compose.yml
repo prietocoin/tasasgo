@@ -1,0 +1,85 @@
+# Entorno local completo de TasasHub: base de datos, renderer Node y servicio Go.
+#
+#   docker compose up --build
+#
+# Los servicios se hablan entre sí por la red interna de Compose y por el nombre
+# del servicio, nunca por localhost: dentro de un contenedor, "localhost" es el
+# propio contenedor y no el equipo que lo hospeda.
+#
+# Las llaves ${VARIABLE:-por_defecto} se sustituyen desde un archivo .env en esta
+# misma carpeta si existe, y si no, desde el entorno del sistema. El stack
+# arranca sin configurar nada.
+
+name: tasashub
+
+services:
+  # Base de datos de desarrollo. El volumen conserva los datos entre reinicios:
+  # para empezar de cero, "docker compose down -v".
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-tasashub_local}
+      POSTGRES_DB: ${DB_NAME:-automat}
+    ports:
+      # Solo desde el propio equipo: es una base de desarrollo, con contraseña
+      # conocida y sin cifrado de transporte.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - datos-postgres:/var/lib/postgresql/data
+    healthcheck:
+      # El servicio Go aborta si la base no responde al arrancar. Esta sonda es
+      # lo que impide que se caiga durante el primer arranque en frío, cuando
+      # Postgres todavía está inicializando el directorio de datos.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-automat}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Renderer PNG heredado de Node (Satori + Resvg). Se reutiliza el Dockerfile de
+  # old/ cambiando el comando: sigue siendo Node a propósito, porque reescribir
+  # la plantilla en Go cambiaría el PNG byte a byte.
+  renderer-sidecar:
+    build:
+      context: ./old
+    command: npm run renderer
+    environment:
+      # renderer-server.js lee RENDERER_PORT, no PORT.
+      RENDERER_PORT: 3090
+    ports:
+      - "127.0.0.1:3090:3090"
+
+  # Servicio Go. APP_ENV=production desactiva la lectura del archivo .env: toda
+  # la configuración entra por entorno, que es justo lo que Compose le entrega.
+  tasasgo:
+    build:
+      context: ./tasasgo
+    environment:
+      APP_ENV: production
+      PORT: 3003
+      # La zona horaria se fija aquí y los datos vienen embebidos en el binario.
+      # Tenerla sin datos disponibles haría que las horas cayeran a UTC.
+      TZ: America/Caracas
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-tasashub_local}
+      DB_NAME: ${DB_NAME:-automat}
+      DB_SSLMODE: disable
+      RENDERER_URL: http://renderer-sidecar:3090
+      # Vacío equivale a modo simulación: el stack arranca sin credenciales de
+      # WhatsApp y no envía nada a grupos reales.
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL:-}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-Glauk}
+      JID_GRUPO_PRUEBA: ${JID_GRUPO_PRUEBA:-}
+    ports:
+      - "127.0.0.1:3003:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      renderer-sidecar:
+        condition: service_started
+
+volumes:
+  datos-postgres:
