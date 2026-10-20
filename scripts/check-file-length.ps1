@@ -1,5 +1,9 @@
 <#
-    Audita el límite de líneas por archivo del proyecto TasasGo.
+    Audita el límite de líneas por archivo de TasasGo.
+
+    Se ejecuta desde la raíz del repositorio: el proyecto Go vive ahí desde que
+    dejó de estar en la subcarpeta tasasgo/, así que el recorrido cubre todo el
+    árbol del módulo sin rutas especiales.
 
     Regla: los archivos de producción no pueden salir del rango 30-60 líneas.
     Los *_test.go tienen un techo propio de 100 líneas para poder alojar tablas
@@ -13,6 +17,7 @@
     Salida: tabla de archivos y código de salida 1 si alguno incumple.
 #>
 param(
+    # La raíz del módulo es la carpeta que contiene este script.
     [string]$Root = "$PSScriptRoot/.."
 )
 

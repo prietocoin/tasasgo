@@ -27,8 +27,9 @@ atiende la API, dibuja la cartelera y entrega el dashboard.
 | **F8** | Panel (HTML, manifiesto y banderas) servido por Fiber | ✅ Implementada |
 
 El PNG de la cartelera se dibuja **en memoria dentro del binario Go** y el panel se sirve desde el
-mismo proceso: ya no hay servicio Node. El proyecto de `old/` se conserva como referencia histórica
-—de ahí salieron los assets y los fixtures dorados— pero no forma parte del despliegue.
+mismo proceso: ya no hay servicio Node. El proyecto histórico se eliminó del árbol y quedó
+congelado en el tag `v1.0.0-legacy-node`: de ahí salieron los assets y los fixtures dorados, y ahí
+sigue consultable si alguna vez hace falta comparar comportamientos.
 
 ---
 
@@ -45,8 +46,7 @@ mismo proceso: ya no hay servicio Node. El proyecto de `old/` se conserva como r
 ## Arranque rápido
 
 ```powershell
-# 1. Situarse en el módulo
-cd tasasgo
+# 1. Situarse en la raíz del repositorio (aquí viven go.mod y cmd/)
 
 # 2. Crear el archivo de entorno local a partir de la plantilla
 Copy-Item .env.example .env
@@ -69,7 +69,7 @@ curl http://localhost:3003/health
 # {"status":"OK","service":"TasasHub Engine ⚡","instance":"Glauk","database":"ok",...}
 ```
 
-El panel queda en `http://localhost:3003/`: se ejecuta desde `tasasgo/`, que es donde `./public`
+El panel queda en `http://localhost:3003/`: se ejecuta desde la raíz, que es donde `./public`
 existe (ver *El panel servido por Go (Fase 8)*).
 
 Comprobar que la instancia es configurable **sin recompilar**:
@@ -103,10 +103,13 @@ go run ./cmd/evoprobe
 ## Estructura de carpetas
 
 ```text
-tasasgo/
+Tasashub/                                   Raíz del repositorio y del módulo Go
 ├── go.mod                                  Definición del módulo y dependencias
+├── go.sum                                  Sumas de verificación de dependencias
 ├── Dockerfile                              Imagen scratch multi-stage, sin root
+├── docker-compose.yml                      Postgres + servicio, contexto en la raíz
 ├── .dockerignore                           Lo que no entra al contexto de compilación
+├── .gitignore                              Credenciales, binarios y temporales
 ├── .env.example                            Plantilla de variables de entorno (sin secretos)
 ├── README.md                               Este documento
 ├── public/                                 El panel que sirve el servicio
@@ -391,8 +394,8 @@ de cada pieza:
 ### Paridad con el PNG publicado
 
 El rasterizador cambia (Satori + Resvg frente a gg), así que la paridad se validó por geometría y
-color, no byte a byte. Se generó una imagen de referencia con el pipeline Node de `old/` y se midió
-con un escáner de píxeles propio:
+color, no byte a byte. Se generó una imagen de referencia con el pipeline Node histórico —hoy en el
+tag `v1.0.0-legacy-node`— y se midió con un escáner de píxeles propio:
 
 - Las tarjetas, la franja azul y las banderas caen en las mismas coordenadas (±1 px).
 - Los textos quedan a ±1 px de su caja original. gg centra por el tamaño de la fuente y la hoja de
@@ -617,15 +620,14 @@ docker compose up --build
 ```
 
 ```text
-Tasashub/                     raíz del repositorio
+Tasashub/                     raíz del repositorio = contexto de compilación
 ├── .gitignore                Protege el .env que Compose lee para sustituir variables
+├── .dockerignore             Deja fuera del contexto lo que no compila
 ├── docker-compose.yml        Orquesta los dos servicios y su red interna
-├── old/                      Proyecto Node histórico, fuera del despliegue
-│   └── .dockerignore
-└── tasasgo/                  Servicio Go
-    ├── Dockerfile            Imagen scratch multi-stage, sin root
-    ├── public/               El panel, que se copia dentro de la imagen
-    └── .dockerignore
+├── go.mod / go.sum           El módulo, ahora en la raíz
+├── cmd/ internal/            El servicio Go
+├── public/                   El panel, que se copia dentro de la imagen
+└── Dockerfile                Imagen scratch multi-stage, sin root
 ```
 
 ### Qué se levanta
@@ -633,7 +635,7 @@ Tasashub/                     raíz del repositorio
 | Servicio | Origen | Puerto publicado | Rol |
 |---|---|---|---|
 | `postgres` | `postgres:16-alpine` | `127.0.0.1:5432` | Base `automat`, con el volumen `datos-postgres`. |
-| `tasasgo` | `./tasasgo` | `127.0.0.1:3003` | API, PNG y panel en el mismo proceso. |
+| `tasasgo` | `.` (la raíz del repositorio) | `127.0.0.1:3003` | API, PNG y panel en el mismo proceso. |
 
 Los dos puertos se publican **solo en `127.0.0.1`**: es un entorno de desarrollo, con contraseña
 conocida y sin TLS, así que no se expone a la red local. Para abrirlo a la red, quita el prefijo en
@@ -772,11 +774,12 @@ pintar el PNG, y `public/flags/` las tiene en disco para que el navegador las pi
 dibujo necesita imágenes en memoria. Son 19 archivos pequeños, y la alternativa —servirlas desde el
 paquete `render`— acoplaría el panel al renderizador.
 
-### Lo que no se tocó
+### Qué fue del proyecto Node
 
-`old/` se conserva tal cual: es la implementación de referencia de la que salieron los assets, los
-fixtures dorados del calculador y la plantilla del PNG. Este proyecto ya no lo ejecuta, pero borrarlo
-sería destruir la evidencia con la que se verificó la paridad.
+`old/` se eliminó del árbol para dejar un único proyecto. Antes de borrarlo se creó el tag anotado
+`v1.0.0-legacy-node`, así que la implementación de referencia —los assets originales, los fixtures
+dorados del calculador y la plantilla del PNG— sigue recuperable con `git checkout` si alguna vez hay
+que comparar un comportamiento. El repositorio ya no lo ejecuta ni lo necesita para compilar.
 
 ---
 
@@ -907,7 +910,7 @@ configuración incompleta con valores de desarrollo.
 | El servicio no arranca y no hay mensaje de configuración | `APP_ENV=production` y variables sin definir | Definir las variables en el sistema, no en `.env` |
 | Puerto ocupado (`address already in use`) | Hay otra instancia del servicio corriendo, o el Node histórico en `3002` | Detener el proceso anterior o cambiar `PORT` |
 | `address already in use` sin nada a la vista | Una instancia previa de `go run` sigue viva en segundo plano | Buscar el proceso y terminarlo |
-| La raíz devuelve `{"success":false,"error":"ruta no encontrada: /"}` | El proceso no se ejecuta desde la carpeta del módulo, así que `./public` no existe | Arrancar desde `tasasgo/` (`go run ./cmd/server`) o desde la imagen, que copia `public/` en `/` |
+| La raíz devuelve `{"success":false,"error":"ruta no encontrada: /"}` | El proceso no se ejecuta desde la raíz del módulo, así que `./public` no existe | Arrancar desde la raíz del repositorio (`go run ./cmd/server`) o desde la imagen, que copia `public/` en `/` |
 
 ---
 

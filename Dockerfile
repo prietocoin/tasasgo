@@ -3,7 +3,7 @@
 # glibc. Todo lo que necesita en tiempo de ejecución —certificados, usuario y
 # zonas horarias— se resuelve aquí, porque el sistema operativo no existe.
 #
-#   docker build -t tasasgo ./tasasgo
+#   docker build -t tasasgo .
 
 # ---------- Etapa 1: compilación ----------
 FROM golang:1.27-alpine AS builder

@@ -1,4 +1,7 @@
 # Qué NO entra al contexto de compilación de TasasGo.
+#
+# El contexto es la raíz del repositorio: la imagen se construye desde aquí y
+# compila el mismo árbol que ves en el proyecto.
 
 # Credenciales reales. Una capa de imagen conserva lo que se copió aunque el
 # archivo se borre después, así que el .env no debe llegar nunca al constructor.
@@ -13,8 +16,13 @@
 *.exe
 *.test
 *.out
+*.prof
+coverage.out
 
 # Documentación y utilidades de desarrollo.
 README.md
+DIAGNOSTICO_MIGRACION.md
+PLAN_FASE1.md
 REPLANTEO_ARQUITECTURA_V2.md
+docker-compose.yml
 scripts/

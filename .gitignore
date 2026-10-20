@@ -1,4 +1,22 @@
-# Compose lee automáticamente el archivo .env de esta carpeta para sustituir las
-# variables del stack. Si lo usas para credenciales reales, no debe versionarse.
+# Credenciales reales: solo se versiona la plantilla .env.example.
+# Compose lee este archivo para sustituir las variables del stack, así que con
+# credenciales reales no debe llegar nunca al repositorio.
 .env
 .env.local
+
+# Binarios y artefactos de compilación.
+*.exe
+*.test
+*.out
+
+# Salida de cobertura y perfiles.
+*.prof
+coverage.out
+
+# Temporales de la auditoría de líneas.
+audit.txt
+
+# El panel se versiona a propósito: es parte del servicio, no un artefacto de
+# compilación. La regla no excluye nada por sí sola; deja constancia de que
+# public/ debe seguir en el repositorio.
+!public/

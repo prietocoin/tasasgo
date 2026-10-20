@@ -44,7 +44,9 @@ services:
   # justo lo que Compose le entrega.
   tasasgo:
     build:
-      context: ./tasasgo
+      # El contexto es la raíz del repositorio: go.mod, cmd/, internal/ y
+      # public/ viven ahí desde la unificación del servicio Go.
+      context: .
     environment:
       APP_ENV: production
       PORT: 3003
