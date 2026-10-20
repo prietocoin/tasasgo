@@ -1,0 +1,23 @@
+{
+  "short_name": "TasasHub",
+  "name": "TasasHub Engine - Gestión de Tasas",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/888/888857.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/888/888857.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#040a17",
+  "theme_color": "#0b1326",
+  "display": "standalone",
+  "orientation": "portrait"
+}

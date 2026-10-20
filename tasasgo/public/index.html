@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TasasHub Engine - Control Global & Socios</title>
+
+  <!-- FAVICON Y LOGOS PWA -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230b1326'/><text y='.9em' x='15' font-size='75'>⚡</text></svg>">
+  <link rel="shortcut icon" href="https://cdn-icons-png.flaticon.com/512/888/888857.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0b1326">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="TasasHub">
+  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/888/888857.png">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brandDark: '#040a17',
+            cardDark: '#0b1326',
+            borderDark: '#1e293b',
+            accentCyan: '#38bdf8',
+            accentGreen: '#34d399',
+            accentOrange: '#f97316',
+            accentPurple: '#a855f7',
+            accentRed: '#fb7185'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; user-select: none; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #040a17; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-brandDark text-slate-100 min-h-screen pb-24 font-sans">
+
+  <!-- HEADER GLOBAL -->
+  <header class="sticky top-0 z-30 bg-cardDark/95 backdrop-blur-md border-b border-borderDark p-3 shadow-md">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 font-bold text-base shadow-md shadow-blue-500/10">
+          ⚡
+        </div>
+        <div>
+          <h1 class="text-sm font-extrabold text-white leading-tight">TasasHub Engine</h1>
+          <p class="text-[10px] text-slate-400">Control Global &amp; Socios</p>
+        </div>
+      </div>
+
+      <button id="btnInstallPWA" onclick="instalarPWA()" class="hidden px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/40 text-cyan-400 rounded-xl text-xs font-bold active:scale-95 transition flex items-center gap-1">
+        📲 <span>Instalar App</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto p-3 space-y-4">
+
+    <!-- SELECTOR DE PESTAÑAS (TABS) -->
+    <div class="grid grid-cols-2 bg-cardDark p-1 rounded-xl border border-borderDark text-xs font-bold">
+      <button id="btnTab1" onclick="switchTab(1)" class="py-2.5 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 text-center transition">
+        📊 Monitor Global
+      </button>
+      <button id="btnTab2" onclick="switchTab(2)" class="py-2.5 rounded-lg text-slate-400 hover:text-white text-center transition">
+        👤 Checklist Socio
+      </button>
+    </div>
+
+    <!-- TAB 1: MONITOR GLOBAL -->
+    <div id="tab1" class="space-y-3">
+      <div class="bg-cardDark border border-borderDark rounded-2xl p-4 shadow-xl space-y-4">
+        
+        <div class="flex items-center justify-between text-xs pb-2 border-b border-borderDark">
+          <span class="font-bold text-emerald-400 tracking-wider flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            MONITOR DE VARIACIÓN &amp; PUBLICACIÓN
+          </span>
+          
+          <div class="flex items-center gap-2">
+            <span id="lblLoteActual" class="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-extrabold px-3 py-1 rounded-full text-[11px]">
+              Lote en Prod: --
+            </span>
+            <!-- BOTÓN ABRIR MODAL BORRAR LOTE -->
+            <button onclick="abrirModalBorrarLote()" class="p-1.5 bg-rose-500/10 border border-rose-500/40 text-rose-400 hover:bg-rose-500/20 rounded-xl text-xs font-bold active:scale-95 transition flex items-center gap-1">
+              🗑️ <span class="hidden sm:inline">Borrar Lote</span>
+            </button>
+            <button 
+  onclick="enviarTasaRemesas()" 
+  class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1.5">
+  🚀 Enviar Tasa Remesas
+</button>
+          </div>
+        </div>
+
+        <!-- GRID DINÁMICO DE MONEDAS -->
+        <div id="gridMonitor" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <!-- Carga dinámica vía API -->
+        </div>
+
+        <!-- ACCIONES SEPARADAS EN EL PIE DEL PANEL -->
+        <div class="pt-3 border-t border-borderDark/80 flex flex-wrap items-center justify-between gap-3 bg-slate-900/50 p-3 rounded-xl border border-borderDark/60">
+          
+          <!-- LADO IZQUIERDO: GUARDAR SOLO EN BD -->
+          <button onclick="guardarLoteEnBD()" class="px-4 py-2 bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30 font-extrabold text-xs rounded-xl active:scale-95 transition flex items-center gap-2 shadow-lg shadow-emerald-500/10">
+            💾 <span>Guardar en tasas_glaukov</span>
+          </button>
+
+          <!-- LADO DERECHO: PUBLICACIÓN Y HOO -->
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <label class="flex items-center gap-2 bg-slate-800 border border-borderDark px-3 py-1.5 rounded-xl text-xs font-bold text-cyan-400 cursor-pointer">
+              <span class="text-slate-300">Prueba Lote:</span>
+              <input type="checkbox" id="globalTestSwitch" checked class="sr-only peer" onchange="toggleGlobalTestMode(this.checked)">
+              <div class="w-8 h-4 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500 relative"></div>
+            </label>
+
+            <button onclick="publicarLoteSocios()" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl active:scale-95 transition flex items-center gap-1.5 shadow-lg shadow-amber-500/20">
+              ⚡ <span>Publicar Lote a Socios ON</span>
+            </button>
+
+            <button onclick="traerBorradorHoo()" class="px-3.5 py-2 bg-purple-500/20 border border-purple-500/40 text-purple-300 hover:bg-purple-500/30 text-xs font-extrabold rounded-xl active:scale-95 transition flex items-center gap-1.5">
+              📑 <span>Traer Borrador Hoo</span>
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: CHECKLIST DE SOCIO -->
+    <div id="tab2" class="hidden space-y-3">
+      <div class="bg-cardDark border border-borderDark rounded-xl p-3 flex items-center justify-between gap-2 shadow-sm">
+        <button onclick="openPartnerSheet()" class="flex-1 flex items-center justify-between bg-slate-900 border border-borderDark active:border-purple-500 px-3 py-2.5 rounded-xl text-left transition">
+          <div class="flex items-center gap-2.5">
+            <span class="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center font-bold text-xs">👤</span>
+            <div>
+              <div id="lblSelectedPartner" class="text-xs font-extrabold text-white">Seleccionar Socio...</div>
+              <div id="lblPartnerBase" class="text-[10px] text-slate-400">Toque para cambiar (70 disponibles)</div>
+            </div>
+          </div>
+          <span class="text-slate-400 text-xs">▼</span>
+        </button>
+
+        <button id="btnTogglePerfil" onclick="togglePerfilState()" class="px-3 py-2.5 rounded-xl text-[11px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 active:scale-95 transition">
+          ON
+        </button>
+      </div>
+
+      <div id="bannerSocioOff" class="hidden bg-rose-500/10 border border-rose-500/40 text-rose-300 p-3 rounded-xl text-xs text-center font-bold">
+        ⚠️ Perfil inactivo. Actívalo con el botón "ON" para modificar monedas.
+      </div>
+
+      <div id="checklistControls" class="flex items-center justify-between text-xs px-1">
+        <div class="text-slate-400 text-[11px]">
+          Activos: <strong id="lblActiveCount" class="text-cyan-400">0</strong> / <span id="lblTotalCount">0</span>
+        </div>
+        <div class="flex gap-1.5">
+          <button onclick="setAllChecklist(true)" class="px-2.5 py-1 bg-slate-800 border border-borderDark rounded-lg font-bold text-slate-200 text-[11px] active:scale-95">
+            ☑️ Todos
+          </button>
+          <button onclick="setAllChecklist(false)" class="px-2.5 py-1 bg-slate-800 border border-borderDark rounded-lg font-bold text-slate-200 text-[11px] active:scale-95">
+            🔳 Ninguno
+          </button>
+        </div>
+      </div>
+
+      <div id="checklistGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
+        <!-- Renderizado dinámico -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MINI MODAL PARA ELIMINAR LOTE -->
+  <div id="modalDeleteBatch" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-3">
+    <div class="bg-cardDark border border-borderDark rounded-2xl max-w-xs w-full p-4 space-y-3 shadow-2xl">
+      <div class="flex items-center justify-between pb-2 border-b border-borderDark">
+        <h3 class="text-xs font-extrabold text-white flex items-center gap-1.5">
+          <span>🗑️</span> Borrar Lote Publicado
+        </h3>
+        <button onclick="cerrarModalBorrarLote()" class="text-slate-400 hover:text-white font-bold text-sm">✕</button>
+      </div>
+
+      <p class="text-[11px] text-slate-400">Ingresa el número de lote a eliminar de la base de datos (Ejemplo: <strong class="text-cyan-400">T068</strong>):</p>
+
+      <input type="text" id="txtBatchIdToDelete" placeholder="T000" class="w-full bg-slate-900 border border-borderDark text-xs font-bold text-rose-300 p-2.5 rounded-xl outline-none uppercase focus:border-rose-500 text-center tracking-wider">
+
+      <div class="flex items-center gap-2 pt-1">
+        <button onclick="confirmarEliminarLote()" class="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs rounded-xl active:scale-95 transition shadow-lg shadow-rose-900/40">
+          Borrar Lote
+        </button>
+        <button onclick="cerrarModalBorrarLote()" class="px-3 py-2 bg-slate-800 text-slate-300 font-bold text-xs rounded-xl hover:bg-slate-700">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BARRA INFERIOR FIJA (TAB 2) -->
+  <div id="stickyFooter" class="hidden fixed bottom-0 left-0 right-0 bg-cardDark/95 backdrop-blur-md border-t border-borderDark p-3 z-30">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-2">
+      <button onclick="verVistaPrevia()" class="p-2.5 bg-slate-800 border border-borderDark text-slate-200 text-xs font-bold rounded-xl active:scale-95 flex items-center gap-1.5">
+        👁️ <span>Ver Previa</span>
+      </button>
+
+      <button onclick="guardarCambiosSocio()" class="flex-1 max-w-[200px] py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-extrabold rounded-xl shadow-lg shadow-purple-900/40 active:scale-95 transition">
+        💾 Guardar Cambios
+      </button>
+    </div>
+  </div>
+
+  <!-- BUSCADOR DE SOCIOS -->
+  <div id="partnerSheet" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex flex-col justify-end">
+    <div class="bg-cardDark border-t border-borderDark rounded-t-2xl p-4 space-y-3 max-h-[85vh] flex flex-col">
+      <div class="flex items-center justify-between pb-2 border-b border-borderDark">
+        <h3 class="text-sm font-extrabold text-white">Seleccionar Socio</h3>
+        <button onclick="closePartnerSheet()" class="p-1 text-slate-400 font-bold text-lg">✕</button>
+      </div>
+
+      <input type="text" id="txtSearchPartner" oninput="filterPartners()" placeholder="🔍 Escribe para buscar socio..." class="w-full bg-slate-900 border border-borderDark text-sm text-white p-3 rounded-xl outline-none focus:border-purple-500">
+
+      <div id="partnerListContainer" class="overflow-y-auto flex-1 space-y-1.5 pr-1">
+        <!-- Lista de socios -->
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE VISTA PREVIA -->
+  <div id="modalPreview" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex flex-col items-center justify-center p-3">
+    <div class="bg-cardDark border border-borderDark rounded-2xl max-w-lg w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-3 border-b border-borderDark flex items-center justify-between bg-slate-900/50">
+        <h3 class="text-xs font-extrabold text-white flex items-center gap-2">
+          <span>👁️</span> Vista Previa Cartelera — <span id="lblModalPartnerName" class="text-cyan-400">---</span>
+        </h3>
+        <button onclick="cerrarVistaPrevia()" class="w-7 h-7 rounded-lg bg-slate-800 text-slate-400 hover:text-white font-bold text-sm flex items-center justify-center">
+          ✕
+        </button>
+      </div>
+
+      <div class="p-3 flex-1 overflow-y-auto flex items-center justify-center bg-brandDark min-h-[280px]">
+        <div id="previewSpinner" class="text-cyan-400 text-xs font-bold animate-pulse flex items-center gap-2">
+          <span class="text-lg">⚡</span> Generando cartelera PNG...
+        </div>
+        <img id="imgPreviewCartelera" src="" alt="Vista Previa Cartelera" class="hidden w-full h-auto rounded-lg shadow-lg border border-borderDark object-contain">
+      </div>
+
+      <div class="p-3 border-t border-borderDark bg-slate-900/80 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <label class="flex items-center gap-1.5 bg-slate-800 border border-borderDark px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-cyan-400 cursor-pointer">
+            <span>Prueba Socio</span>
+            <input type="checkbox" id="chkModalPartnerTest" class="sr-only peer" onchange="togglePartnerTestMode(this.checked)">
+            <div class="w-7 h-4 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-cyan-500 relative"></div>
+          </label>
+
+          <button onclick="dispararCarteleraSocio()" class="px-3 py-1.5 bg-amber-500/20 border border-amber-500/40 text-amber-400 hover:bg-amber-500/30 text-xs font-extrabold rounded-xl active:scale-95 transition flex items-center gap-1">
+            ⚡ <span>Reenviar Socio</span>
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="descargarCarteleraPNG()" class="px-3 py-1.5 bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/30 text-xs font-extrabold rounded-xl active:scale-95 transition flex items-center gap-1">
+            ⬇️ <span>Descargar</span>
+          </button>
+
+          <button onclick="cerrarVistaPrevia()" class="px-3.5 py-1.5 bg-slate-800 text-slate-300 text-xs font-bold rounded-xl hover:bg-slate-700">
+            Cerrar
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- NOTIFICACIÓN TOAST -->
+  <div id="toast" class="fixed top-16 right-4 bg-emerald-500 text-slate-950 font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-2xl hidden z-50 transition-all">
+    Mensaje
+  </div>
+
+  <script>
+  // MAPEO ISO DE BANDERAS
+const MAPA_BANDERAS_ISO = {
+  ARS: 'ar', BRL: 'br', CLP: 'cl', COP: 'co', MXN: 'mx',
+  PEN: 'pe', PYG: 'py', VES: 've', USD: 'us', USDT: 'tt',
+  PYUSD: 'pp', BOB: 'bo', EUR: 'eu', ECU: 'ec', PAN: 'pa',
+  CRC: 'cr', CAD: 'ca', DOP: 'do'
+};
+
+// FALLBACK DE EMOJIS SI NO EXISTE LA IMAGEN
+const BANDERAS_EMOJI_FALLBACK = {
+  COP: '🇨🇴', PEN: '🇵🇪', ARS: '🇦🇷', BRL: '🇧🇷', MXN: '🇲🇽', EUR: '🇪🇺',
+  USD: '🇺🇸', USDT: '🪙', PYUSD: '💵', PYG: '🇵🇾', VES: '🇻🇪', CLP: '🇨🇱',
+  DOP: '🇩🇴', CRC: '🇨🇷', BOB: '🇧🇴', ECU: '🇪🇨', PAN: '🇵🇦', CAD: '🇨🇦'
+};
+
+    let socios = [];
+    let socioActivo = null;
+    let modoPruebaGlobal = true;
+    let borradorTasas = {};
+    let loteActualCodigo = 'T000';
+
+    window.onload = async () => {
+      await cargarMonitor();
+      await cargarSocios();
+    };
+
+    function obtenerUrlBandera(code) {
+      const filename = MAPA_BANDERAS_ISO[code?.toUpperCase()] || code?.toLowerCase().substring(0, 2);
+      return `/flags/${filename}.png`;
+    }
+
+    async function cargarMonitor() {
+      try {
+        const res = await fetch('/api/v1/tasas/monitor');
+        const data = await res.json();
+        if (data.success && data.tasas) {
+          loteActualCodigo = data.id_tasa || 'T000';
+          document.getElementById('lblLoteActual').innerText = `Lote en Prod: ${loteActualCodigo}`;
+          renderMonitorGrid(data.tasas);
+        }
+      } catch (e) { console.error('Error monitor:', e); }
+    }
+
+    async function cargarSocios() {
+      try {
+        const res = await fetch('/api/v1/tasas/socios');
+        const data = await res.json();
+        if (data.success && data.socios?.length > 0) {
+          socios = data.socios;
+          selectPartner(socios[0].nombre);
+        }
+      } catch (e) { console.error('Error socios:', e); }
+    }
+
+    function switchTab(num) {
+      document.getElementById('tab1').classList.toggle('hidden', num !== 1);
+      document.getElementById('tab2').classList.toggle('hidden', num !== 2);
+      document.getElementById('stickyFooter').classList.toggle('hidden', num !== 2);
+
+      document.getElementById('btnTab1').className = num === 1
+        ? 'py-2.5 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 text-center transition'
+        : 'py-2.5 rounded-lg text-slate-400 hover:text-white text-center transition';
+
+      document.getElementById('btnTab2').className = num === 2
+        ? 'py-2.5 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 text-center transition'
+        : 'py-2.5 rounded-lg text-slate-400 hover:text-white text-center transition';
+    }
+
+    // LISTA MASTER DE MONEDAS SOPORTADAS Y SUS VALORES POR DEFECTO
+const MONEDAS_DEFAULT = {
+  ARS: 0, BOB: 0, BRL: 0, CAD: 0, CLP: 0, COP: 0,
+  CRC: 0, DOP: 0, EUR: 0, MXN: 0, PEN: 0, PYG: 0,
+  VES: 0, USD: 1.00, USDT: 1.00, PYUSD: 1.20, ECU: 1.00, PAN: 1.00
+};
+
+function renderMonitorGrid(mapaTasas) {
+  const container = document.getElementById('gridMonitor');
+  
+  // Fusiona los valores predeterminados con lo que devuelva la BD u HOO
+  borradorTasas = { ...MONEDAS_DEFAULT, ...mapaTasas };
+
+  // Filtra llaves de metadatos no numéricos
+  const clavesValidas = Object.keys(borradorTasas).filter(k => k !== 'ID' && k !== 'CREATED_AT');
+
+  container.innerHTML = clavesValidas.map(code => {
+    const valProd = mapaTasas[code] !== undefined ? mapaTasas[code] : (MONEDAS_DEFAULT[code] || 0);
+    const valBorrador = borradorTasas[code];
+    const flagUrl = obtenerUrlBandera(code);
+    const emojiFallback = BANDERAS_EMOJI_FALLBACK[code] || '🌐';
+
+    return `
+      <div class="bg-slate-900/90 border border-borderDark rounded-xl p-3 space-y-2">
+        <div class="text-xs font-black text-purple-300 flex justify-between items-center">
+          <span class="flex items-center gap-1.5">
+            <img src="${flagUrl}" class="w-5 h-3.5 object-cover rounded border border-white/20" 
+                 onerror="this.onerror=null; this.remove(); document.getElementById('fallback-${code}').innerText='${emojiFallback}';">
+            <span id="fallback-${code}"></span>
+            ${code}
+          </span>
+        </div>
+        <div class="text-[10px] text-slate-400 font-bold flex justify-between">
+          <span>PROD:</span>
+          <span class="text-slate-200">${valProd}</span>
+        </div>
+        <div class="space-y-1">
+          <span class="text-[9px] font-extrabold text-emerald-400 tracking-wider uppercase block">NUEVO LOTE</span>
+          <input type="number" step="any" value="${valBorrador}" oninput="actualizarValorBorrador('${code}', this.value)" 
+            class="w-full bg-brandDark border border-emerald-500/40 text-emerald-300 font-bold text-xs p-2 rounded-lg outline-none focus:border-emerald-400">
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+    function actualizarValorBorrador(code, valor) {
+      borradorTasas[code] = parseFloat(valor) || 0;
+    }
+
+    function abrirModalBorrarLote() {
+      document.getElementById('txtBatchIdToDelete').value = loteActualCodigo;
+      document.getElementById('modalDeleteBatch').classList.remove('hidden');
+    }
+
+    function cerrarModalBorrarLote() {
+      document.getElementById('modalDeleteBatch').classList.add('hidden');
+    }
+
+    async function confirmarEliminarLote() {
+      const batchId = document.getElementById('txtBatchIdToDelete').value.trim();
+      if (!batchId) {
+        showToast('⚠️ Ingrese un ID de lote válido');
+        return;
+      }
+
+      showToast(`🗑️ Borrando lote ${batchId}...`);
+
+      try {
+        const res = await fetch(`/api/v1/tasas/lote/${encodeURIComponent(batchId)}`, {
+          method: 'DELETE'
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          showToast(`✅ Lote ${batchId} eliminado`);
+          cerrarModalBorrarLote();
+          await cargarMonitor();
+        } else {
+          showToast(`❌ ${data.error || 'No se pudo eliminar'}`);
+        }
+      } catch (e) {
+        showToast('❌ Error al conectar con el servidor');
+      }
+    }
+
+    async function traerBorradorHoo() {
+      showToast('📑 Leyendo datos de HOO...');
+      try {
+        const res = await fetch('/api/v1/tasas/hoo-borrador');
+        const data = await res.json();
+
+        if (data.success && data.borrador) {
+          renderMonitorGrid(data.borrador);
+          showToast('✅ Borrador cargado desde HOO');
+        } else {
+          showToast('❌ No se recibieron datos de HOO');
+        }
+      } catch (e) {
+        showToast('❌ Error de conexión al leer HOO');
+      }
+    }
+
+    async function guardarLoteEnBD() {
+      showToast('💾 Guardando en tasas_glaukov...');
+
+      try {
+        const res = await fetch('/api/v1/tasas/guardar-lote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tasas: borradorTasas })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          loteActualCodigo = data.id_tasa;
+          document.getElementById('lblLoteActual').innerText = `Lote en Prod: ${data.id_tasa}`;
+          showToast(`✅ Lote ${data.id_tasa} guardado en BD`);
+        } else {
+          showToast(`❌ Error: ${data.error}`);
+        }
+      } catch (e) {
+        showToast('❌ Error al guardar en servidor');
+      }
+    }
+
+    async function publicarLoteSocios() {
+      showToast('⚡ Despachando lote a socios en ON...');
+
+      try {
+        const res = await fetch('/api/v1/tasas/publicar-lote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ modo_prueba_global: modoPruebaGlobal })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          showToast(`🚀 Publicado a ${data.procesados} socios ON`);
+        } else {
+          showToast(`❌ Error al publicar: ${data.error}`);
+        }
+      } catch (e) {
+        showToast('❌ Error de conexión al publicar');
+      }
+    }
+
+    function openPartnerSheet() {
+      document.getElementById('partnerSheet').classList.remove('hidden');
+      renderPartnerList();
+    }
+
+    function closePartnerSheet() {
+      document.getElementById('partnerSheet').classList.add('hidden');
+    }
+
+    function renderPartnerList(filter = '') {
+      const container = document.getElementById('partnerListContainer');
+      const filtered = socios.filter(s => s.nombre.toLowerCase().includes(filter.toLowerCase()));
+
+      container.innerHTML = filtered.map(s => `
+        <div onclick="selectPartner('${s.nombre}')" class="p-3 bg-slate-900 border border-borderDark rounded-xl active:bg-purple-900/30 flex items-center justify-between text-xs cursor-pointer">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full ${s.activo !== false ? 'bg-emerald-400' : 'bg-rose-500'}"></span>
+            <span class="font-extrabold text-white">${s.nombre}</span>
+          </div>
+          <span class="text-[10px] text-slate-400 font-bold bg-slate-800 px-2 py-0.5 rounded">${s.moneda_base || 'USDT'}</span>
+        </div>
+      `).join('');
+    }
+
+    function filterPartners() {
+      renderPartnerList(document.getElementById('txtSearchPartner').value);
+    }
+
+    function selectPartner(nombre) {
+      socioActivo = socios.find(s => s.nombre.toLowerCase() === nombre.toLowerCase());
+      if (!socioActivo) return;
+
+      if (!socioActivo.monedas) socioActivo.monedas = {};
+
+      document.getElementById('lblSelectedPartner').innerText = socioActivo.nombre;
+      document.getElementById('lblPartnerBase').innerText = `Base: ${socioActivo.moneda_base || 'USDT'}`;
+
+      updatePerfilUI(socioActivo.activo !== false);
+      renderChecklistGrid();
+      closePartnerSheet();
+    }
+
+    function renderChecklistGrid() {
+      if (!socioActivo) return;
+      const container = document.getElementById('checklistGrid');
+      let activeCount = 0;
+      const codigos = Object.keys(MAPA_BANDERAS_ISO);
+
+      container.innerHTML = codigos.map(code => {
+        const isChecked = socioActivo.monedas?.[code]?.activo || false;
+        if (isChecked) activeCount++;
+        const flagUrl = obtenerUrlBandera(code);
+        const emojiFallback = BANDERAS_EMOJI_FALLBACK[code] || '🌐';
+
+        return `
+          <button onclick="toggleCountry('${code}')" class="p-3 border rounded-xl flex items-center justify-between active:scale-95 transition ${isChecked ? 'border-cyan-500/80 bg-cyan-500/10 text-white' : 'border-borderDark bg-cardDark text-slate-400'}">
+            <div class="flex items-center gap-2 text-left">
+              <img src="${flagUrl}" class="w-5 h-3.5 object-cover rounded border border-white/20" 
+                   onerror="this.onerror=null; this.remove(); document.getElementById('chk-fallback-${code}').innerText='${emojiFallback}';">
+              <span id="chk-fallback-${code}"></span>
+              <span class="text-xs font-bold">${code}</span>
+            </div>
+            <span class="text-xs">${isChecked ? '✅' : '⬜'}</span>
+          </button>
+        `;
+      }).join('');
+
+      document.getElementById('lblActiveCount').innerText = activeCount;
+      document.getElementById('lblTotalCount').innerText = codigos.length;
+    }
+
+    function toggleCountry(code) {
+      if (socioActivo.activo === false) return;
+      if (!socioActivo.monedas[code]) socioActivo.monedas[code] = {};
+      socioActivo.monedas[code].activo = !socioActivo.monedas[code].activo;
+      renderChecklistGrid();
+    }
+
+    function setAllChecklist(status) {
+      if (socioActivo.activo === false) return;
+      Object.keys(MAPA_BANDERAS_ISO).forEach(code => {
+        if (!socioActivo.monedas[code]) socioActivo.monedas[code] = {};
+        socioActivo.monedas[code].activo = status;
+      });
+      renderChecklistGrid();
+    }
+
+    function togglePerfilState() {
+      socioActivo.activo = socioActivo.activo === false ? true : false;
+      updatePerfilUI(socioActivo.activo);
+    }
+
+    function updatePerfilUI(activo) {
+      const btn = document.getElementById('btnTogglePerfil');
+      const banner = document.getElementById('bannerSocioOff');
+      const grid = document.getElementById('checklistGrid');
+
+      if (activo) {
+        btn.innerText = 'ON';
+        btn.className = 'px-3 py-2.5 rounded-xl text-[11px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 active:scale-95 transition';
+        banner.classList.add('hidden');
+        grid.classList.remove('opacity-30', 'pointer-events-none');
+      } else {
+        btn.innerText = 'OFF';
+        btn.className = 'px-3 py-2.5 rounded-xl text-[11px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/40 active:scale-95 transition';
+        banner.classList.remove('hidden');
+        grid.classList.add('opacity-30', 'pointer-events-none');
+      }
+    }
+
+    function toggleGlobalTestMode(checked) {
+      modoPruebaGlobal = checked;
+      showToast(`Prueba Lote: ${checked ? 'ON' : 'OFF'}`);
+    }
+
+    async function verVistaPrevia() {
+      if (!socioActivo) return;
+
+      const modal = document.getElementById('modalPreview');
+      const spinner = document.getElementById('previewSpinner');
+      const img = document.getElementById('imgPreviewCartelera');
+      const partnerNameLbl = document.getElementById('lblModalPartnerName');
+      const partnerTestChk = document.getElementById('chkModalPartnerTest');
+
+      partnerNameLbl.innerText = socioActivo.nombre;
+      partnerTestChk.checked = !!socioActivo.modo_prueba;
+
+      modal.classList.remove('hidden');
+      spinner.classList.remove('hidden');
+      img.classList.add('hidden');
+      img.src = '';
+
+      try {
+        const res = await fetch(`/api/v1/tasas/render/${encodeURIComponent(socioActivo.nombre)}`);
+        if (!res.ok) throw new Error('Error al renderizar');
+
+        const imageBlob = await res.blob();
+        img.src = URL.createObjectURL(imageBlob);
+        img.classList.remove('hidden');
+        spinner.classList.add('hidden');
+      } catch (e) {
+        showToast('❌ Error generando cartelera');
+        cerrarVistaPrevia();
+      }
+    }
+
+    function descargarCarteleraPNG() {
+      const img = document.getElementById('imgPreviewCartelera');
+      if (!img || !img.src || img.classList.contains('hidden')) {
+        showToast('⚠️ Primero genera la vista previa');
+        return;
+      }
+
+      const a = document.createElement('a');
+      a.href = img.src;
+      const nombreSocio = socioActivo ? socioActivo.nombre.replace(/[^a-z0-9]/gi, '_') : 'socio';
+      a.download = `Cartelera_${nombreSocio}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast('📥 Descargando cartelera...');
+    }
+
+    function togglePartnerTestMode(checked) {
+      if (!socioActivo) return;
+      socioActivo.modo_prueba = checked;
+      showToast(`Prueba Socio (${socioActivo.nombre}): ${checked ? 'ON' : 'OFF'}`);
+    }
+
+    async function dispararCarteleraSocio() {
+      if (!socioActivo) return;
+
+      showToast(`⚡ Enviando cartelera a ${socioActivo.nombre}...`);
+
+      try {
+        const res = await fetch('/api/v1/tasas/disparar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            socio: socioActivo.nombre,
+            modo_prueba: socioActivo.modo_prueba 
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(`✅ Cartelera enviada para ${socioActivo.nombre}`);
+        } else {
+          showToast(`❌ Error: ${data.error || 'No se pudo enviar'}`);
+        }
+      } catch (e) {
+        console.error('Error al disparar socio:', e);
+        showToast('❌ Error de conexión al servidor');
+      }
+    }
+
+    function cerrarVistaPrevia() {
+      const modal = document.getElementById('modalPreview');
+      const img = document.getElementById('imgPreviewCartelera');
+      modal.classList.add('hidden');
+      if (img.src) {
+        URL.revokeObjectURL(img.src);
+        img.src = '';
+      }
+    }
+
+    async function guardarCambiosSocio() {
+      if (!socioActivo) return;
+
+      try {
+        const res = await fetch(`/api/v1/tasas/socios/${encodeURIComponent(socioActivo.nombre)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            monedas: socioActivo.monedas,
+            activo: socioActivo.activo,
+            modo_prueba: socioActivo.modo_prueba
+          })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          showToast(`💾 Guardado para ${socioActivo.nombre}`);
+        } else {
+          showToast('❌ Error guardando');
+        }
+      } catch (e) {
+        showToast('❌ Error de red');
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.innerText = msg;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 2200);
+    }
+
+    // REGISTRO Y SOPORTE PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(e => console.log('SW Registration error:', e));
+      });
+    }
+
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const btnInstall = document.getElementById('btnInstallPWA');
+      if (btnInstall) btnInstall.classList.remove('hidden');
+    });
+
+    async function instalarPWA() {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        const btnInstall = document.getElementById('btnInstallPWA');
+        if (btnInstall) btnInstall.classList.add('hidden');
+      }
+      deferredPrompt = null;
+    }
+async function enviarTasaRemesas() {
+  try {
+    showToast('⏳ Activando flujo de remesas...');
+    const res = await fetch('/api/v1/tasas/notificar-remesas', { method: 'POST' });
+    const data = await res.json();
+    
+    if (data.success) {
+      showToast('✅ Notificación insertada en BD');
+    } else {
+      showToast('❌ Error: ' + (data.error || 'No se pudo enviar'));
+    }
+  } catch (err) {
+    console.error('[Error enviarTasaRemesas]:', err);
+    showToast('❌ Error de conexión con el servidor');
+  }
+}
+    
+  </script>
+</body>
+</html>

@@ -4,8 +4,9 @@ Servicio HTTP en Go (Fiber v2) que reemplaza de forma incremental el backend Nod
 TasasHub: la Fase 1 dejó el esqueleto (configuración, base de datos, cliente de Evolution API y
 `/health`), la Fase 2 portó el calculador, la Fase 3 la capa de datos, la Fase 4 el renderer PNG
 nativo, la Fase 5 los doce endpoints de `/api/v1/tasas` con su concurrencia, la Fase 6 el cliente del
-origen HOO y el middleware de seguridad, y la Fase 7 la imagen Docker y el entorno orquestado. El
-renderizado de la cartelera ya no depende de Node; el frontend histórico sigue en `old/`.
+origen HOO y el middleware de seguridad, la Fase 7 la imagen Docker y el entorno orquestado, y la
+Fase 8 el panel servido desde el mismo proceso. **Node ya no hace falta para nada**: este servicio
+atiende la API, dibuja la cartelera y entrega el dashboard.
 
 > **Documento de arquitectura:** `REPLANTEO_ARQUITECTURA_V2.md`
 > **Plan de origen:** `PLAN_FASE1.md` · **Diagnóstico:** `DIAGNOSTICO_MIGRACION.md`
@@ -23,16 +24,18 @@ renderizado de la cartelera ya no depende de Node; el frontend histórico sigue 
 | **F5** | Los 12 endpoints de `/api/v1/tasas` + concurrencia | ✅ Implementada |
 | **F6** | Cliente HOO + middleware de seguridad | ✅ Implementada |
 | **F7** | Docker multi-stage + tzdata | ✅ Implementada |
+| **F8** | Panel (HTML, manifiesto y banderas) servido por Fiber | ✅ Implementada |
 
-El PNG de la cartelera se dibuja **en memoria dentro del binario Go**: ya no hay servicio Node de
-renderizado. El frontend histórico sigue siendo servido por el proyecto Node de `old/`.
+El PNG de la cartelera se dibuja **en memoria dentro del binario Go** y el panel se sirve desde el
+mismo proceso: ya no hay servicio Node. El proyecto de `old/` se conserva como referencia histórica
+—de ahí salieron los assets y los fixtures dorados— pero no forma parte del despliegue.
 
 ---
 
 ## Requisitos
 
 - **Go 1.27 o superior** (`go version`)
-- **PostgreSQL** accesible (mismas credenciales que usa hoy el servicio Node)
+- **PostgreSQL** accesible (las mismas credenciales heredadas del servicio Node)
 - **Docker y Compose v2** solo si vas a levantar el entorno completo de una vez (ver
   *Docker: el entorno completo*)
 - Opcional: [`golangci-lint`](https://golangci-lint.run/) si quieres análisis estático adicional a `go vet`
@@ -65,6 +68,9 @@ Verificación:
 curl http://localhost:3003/health
 # {"status":"OK","service":"TasasHub Engine ⚡","instance":"Glauk","database":"ok",...}
 ```
+
+El panel queda en `http://localhost:3003/`: se ejecuta desde `tasasgo/`, que es donde `./public`
+existe (ver *El panel servido por Go (Fase 8)*).
 
 Comprobar que la instancia es configurable **sin recompilar**:
 
@@ -103,14 +109,20 @@ tasasgo/
 ├── .dockerignore                           Lo que no entra al contexto de compilación
 ├── .env.example                            Plantilla de variables de entorno (sin secretos)
 ├── README.md                               Este documento
+├── public/                                 El panel que sirve el servicio
+│   ├── index.html                          Dashboard completo (una sola página)
+│   ├── manifest.json                       Manifiesto de la PWA
+│   ├── sw.js                               Service worker mínimo
+│   └── flags/                              Banderas que pinta el panel en las tablas
 ├── scripts/
 │   └── check-file-length.ps1               Auditoría del límite de líneas por archivo
 ├── cmd/
 │   ├── server/
 │   │   ├── main.go                         Arranque: ensambla config, db y servidor
 │   │   ├── app.go                          Construcción del servidor Fiber y manejo de errores
-│   │   ├── routes.go                       Tabla de rutas y respuesta 404
-│   │   └── health.go                       Contrato del endpoint /health
+│   │   ├── routes.go                       Tabla de rutas, panel y respuesta 404
+│   │   ├── health.go                       Contrato del endpoint /health
+│   │   └── rutas_test.go                   El panel y la API sobre el montaje real
 │   └── evoprobe/
 │       └── main.go                         CLI de sondeo contra Evolution real
 └── internal/
@@ -121,6 +133,10 @@ tasasgo/
     │   └── postgres.go                     Ciclo de vida del pool de conexiones
     ├── middleware/
     │   └── security.go                     CORS y la política de marcos del iframe
+    ├── web/
+    │   ├── estaticos.go                    Monta el panel antes del 404 y después de la API
+    │   ├── estaticos_test.go               La raíz sirve el dashboard y sus archivos
+    │   └── precedencia_test.go             La API gana al servicio de archivos
     └── modules/
         └── tasas/
             ├── dependencias.go             Deps: lo que los handlers comparten, inyectado
@@ -175,11 +191,12 @@ tasasgo/
             │   ├── lienzo.go              GenerarCartelera: arma el PNG completo
             │   ├── assets.go              Assets embebidos y la tipografía ya parseada
             │   ├── imagenes.go            Fondo, logo y banderas decodificados una vez
-            │   ├── escalado.go            Redimensionado y recorte tipo `object-fit`
+            │   ├── banderas.go            La bandera de cada código y su recorte
             │   ├── medidas.go             Geometría del lienzo y de la cuadrícula
             │   ├── paleta.go              Colores de la plantilla en un solo lugar
-            │   ├── fondo.go               Fondo a tamaño natural, recortado por el lienzo
+            │   ├── capas.go               Fondo a tamaño natural y logo del encabezado
             │   ├── texto.go               Medición y alineación del texto
+            │   ├── espaciado.go           El letterSpacing que gg no tiene
             │   ├── formas.go              Píldoras, tarjetas y banderas redondeadas
             │   ├── cabecera.go            Logo, FUNDABLOCK | socio y la insignia OFICIAL
             │   ├── tarjetas.go            Recorrido y posición de la cuadrícula
@@ -215,7 +232,7 @@ tasasgo/
 - La dirección de dependencias es siempre `cmd/ → internal/`. Ningún paquete de `internal/` conoce la
   existencia de `cmd/`. Dentro del módulo, `tasas` (los handlers) importa a `store`, `calculator`,
   `render`, `evolution` y `hoo`, pero ninguno de esos cinco importa a `tasas`: la gracia tiene un solo
-  sentido y no hay ciclos.
+  sentido y no hay ciclos. `web` tampoco depende de `tasas`: monta archivos y no sabe de tasas.
 
 ---
 
@@ -438,7 +455,11 @@ El contrato es el de `tasas.routes.js`, con los mismos métodos y el mismo orden
 
 `routes.go` solo declara rutas: no decide de dónde salen las dependencias. Eso ocurre en
 `cmd/server/routes.go`, que compone el pool, el cliente de Evolution, el de HOO y la configuración,
-y llama a `tasas.Register(app, deps)`.
+llama a `tasas.Register(app, deps)` y monta después el panel con `web.Register`.
+
+El módulo declara **trece** rutas bajo `/api/v1/tasas` y ninguna más: `/health` es del proceso, y el
+panel y sus archivos no son de este módulo, porque no calculan ni guardan nada. Ver
+*El panel servido por Go (Fase 8)*.
 
 ### Dependencias inyectadas
 
@@ -579,7 +600,7 @@ política de marcos que permite embeber el panel en el laboratorio.
 |---|---|---|
 | `Content-Security-Policy` | `frame-ancestors 'self' https://lab.jairokov.com` | Solo el propio origen y el laboratorio pueden mostrar el panel en un iframe. |
 | `X-Frame-Options` | **eliminada** | Su `DENY` por defecto anularía la política. Nada en Fiber la añade, así que la eliminación es defensiva: si alguna capa la pone, se quita. |
-| `Access-Control-Allow-Origin` | `*` | El panel se sirve desde otro origen mientras Node y Go coexisten. |
+| `Access-Control-Allow-Origin` | `*` | El panel ya se sirve desde este mismo origen, así que no lo necesita; queda abierto porque la API también se consume desde fuera (el laboratorio, scripts de prueba) y restringirlo rompería a esos clientes sin ganar nada. |
 
 Se monta en `newApp` **antes** de las rutas, que es cuando Fiber permite que un middleware afecte a
 todo lo que venga después. La prueba lo comprueba poniendo `X-Frame-Options` aguas arriba: sin eso,
@@ -599,10 +620,11 @@ docker compose up --build
 Tasashub/                     raíz del repositorio
 ├── .gitignore                Protege el .env que Compose lee para sustituir variables
 ├── docker-compose.yml        Orquesta los dos servicios y su red interna
-├── old/                      Proyecto Node histórico (solo frontend)
+├── old/                      Proyecto Node histórico, fuera del despliegue
 │   └── .dockerignore
 └── tasasgo/                  Servicio Go
     ├── Dockerfile            Imagen scratch multi-stage, sin root
+    ├── public/               El panel, que se copia dentro de la imagen
     └── .dockerignore
 ```
 
@@ -611,7 +633,7 @@ Tasashub/                     raíz del repositorio
 | Servicio | Origen | Puerto publicado | Rol |
 |---|---|---|---|
 | `postgres` | `postgres:16-alpine` | `127.0.0.1:5432` | Base `automat`, con el volumen `datos-postgres`. |
-| `tasasgo` | `./tasasgo` | `127.0.0.1:3003` | El servicio Go, que también dibuja el PNG. |
+| `tasasgo` | `./tasasgo` | `127.0.0.1:3003` | API, PNG y panel en el mismo proceso. |
 
 Los dos puertos se publican **solo en `127.0.0.1`**: es un entorno de desarrollo, con contraseña
 conocida y sin TLS, así que no se expone a la red local. Para abrirlo a la red, quita el prefijo en
@@ -621,7 +643,7 @@ conocida y sin TLS, así que no se expone a la red local. Para abrirlo a la red,
 
 Los servicios se referencian por **nombre de servicio**, nunca por `localhost`: dentro de un
 contenedor, `localhost` es el propio contenedor. De ahí `DB_HOST=postgres`. El render ya no cruza la
-red: los assets viajan dentro del binario.
+red: los assets viajan dentro del binario, y el panel viaja en la imagen.
 
 `tasasgo` espera a que Postgres esté **sano** (`condition: service_healthy`, con una sonda
 `pg_isready`). Sin eso el arranque en frío se caería: el servicio aborta si la base no responde al
@@ -636,21 +658,30 @@ fallan hasta que cargues el esquema. Desde un respaldo:
 docker compose exec -T postgres psql -U postgres -d automat < respaldo.sql
 ```
 
-### El frontend no forma parte del stack
+### El panel sí forma parte del stack
 
-El panel web sigue en Node y no se levanta aquí, así que `docker compose up` no publica el puerto
-3002. Si lo necesitas mientras pruebas, arráncalo aparte (`cd old && npm start`): el stack **sí**
-expone Postgres en `127.0.0.1:5432` justamente para que ese proceso lo alcance.
+El dashboard está en `http://localhost:3003`, servido por el mismo proceso que la API: no hay un
+puerto 3002 ni un segundo contenedor. Como el HTML llama a `/api/v1/tasas/...` con rutas relativas,
+el navegador pide la API al mismo origen que le sirvió la página y ya no hace falta el proxy que
+tenía Node.
 
-Ese panel ya no consulta la base de datos: reenvía todo `/api` al servicio Go con el proxy
-`old/src/proxy/api-proxy.js`, y toma el destino de `API_URL` (`http://localhost:3003` si no está
-definida). Con eso Node queda como servidor de frontend, que es el estado final buscado.
+La política de marcos del middleware se aplica a todas las respuestas, incluido el HTML, así que el
+panel sigue pudiendo embeberse en `lab.jairokov.com` como antes. El único recurso que no viaja en el
+stack es Tailwind, que el HTML carga desde su CDN: el navegador necesita salida a internet para
+pintar los estilos.
 
 ### Comprobar que quedó en pie
 
 ```bash
 curl http://localhost:3003/health
 # {"status":"OK","service":"TasasHub Engine ⚡","instance":"Glauk","database":"ok","simulated":true,...}
+```
+
+Y el panel, en el mismo puerto:
+
+```bash
+curl -s http://localhost:3003/ | grep -o "<title>.*</title>"
+# <title>TasasHub Engine - Control Global & Socios</title>
 ```
 
 Si `EVOLUTION_API_URL` quedó vacío —el caso por defecto—, `"simulated":true` y **no se envía nada a
@@ -678,11 +709,74 @@ FROM scratch                          # ejecuta
 - **Multi-arquitectura**: `GOOS` y `GOARCH` salen de `TARGETOS`/`TARGETARCH`, con `linux/amd64` por
   defecto, así que el mismo Dockerfile compila en un Mac ARM sin editarlo.
 
-### La imagen no necesita assets en el sistema de archivos
+### Qué viaja en el binario y qué en el sistema de archivos
 
-El fondo, el logo, las banderas y la tipografía viajan dentro del binario con `//go:embed`. En una
-imagen `scratch` no hay que copiar `assets/` ni fijar un directorio de trabajo: el PNG se dibuja
-igual en cualquier contenedor. Es la razón por la que el renderer pudo dejar de ser un sidecar.
+El fondo, el logo, las banderas de la cartelera y la tipografía viajan **dentro del binario** con
+`//go:embed`: en una imagen `scratch` no hay que copiar `assets/` ni fijar un directorio de trabajo, y
+el PNG se dibuja igual en cualquier contenedor. Es la razón por la que el renderer pudo dejar de ser
+un sidecar.
+
+El panel, en cambio, se **copia** con `COPY public /public` y el proceso arranca en la raíz. Son
+177 KB de HTML, manifiesto y banderas que se sirven desde el sistema de archivos a propósito:
+editarlos no obliga a recompilar el binario.
+
+---
+
+## El panel servido por Go (Fase 8)
+
+`public/` es el dashboard que antes servía Node: un HTML de una sola página, su manifiesto de PWA, el
+service worker y las banderas que el panel pinta en las tablas. `internal/web` lo monta en la raíz del
+sitio, así que **el contenedor de Node ya no tiene ninguna razón para existir**.
+
+### Dónde se monta, y por qué ahí
+
+El orden de registro es la única decisión delicada de la fase:
+
+```go
+app.Get("/health", …)        // 1. la sonda
+tasas.Register(app, deps)    // 2. la API, bajo /api/v1/tasas
+web.Register(app, raizWeb)   // 3. el panel: responde a lo que nadie reclamó antes
+app.Use(notFound)            // 4. el 404 en JSON
+```
+
+El servicio de archivos responde a **cualquier** ruta, así que montarlo antes que la API taparía
+`/api/v1/tasas` sin un solo error visible en el arranque. Y va antes del 404 porque tiene que poder
+responder la raíz y las banderas. Un archivo que no existe no lo responde él: devuelve el control y el
+404 sigue saliendo en JSON, con la misma forma que el resto del servicio.
+
+`precedencia_test.go` cubre las dos caras del acuerdo: un `GET` y un `POST` de la API llegan a su
+handler, y una ruta inventada sigue recibiendo el 404 del servicio. `estaticos_test.go` comprueba que
+la raíz devuelve el dashboard (no un listado de directorio) y que el manifiesto, el service worker y
+las banderas se sirven con su tipo correcto. Las dos suites apuntan a `public/` de verdad, no a una
+copia de prueba: lo que hay que demostrar es que el panel viaja completo.
+
+### Qué se sirve
+
+| Ruta | Archivo | Para qué |
+|---|---|---|
+| `GET /` | `public/index.html` | El dashboard completo |
+| `GET /manifest.json` | `public/manifest.json` | Instalación como PWA y color de la barra |
+| `GET /sw.js` | `public/sw.js` | Service worker que registra el propio panel |
+| `GET /flags/*.png` | `public/flags/*.png` | Las banderas de las tablas de monedas |
+
+La raíz llega **por parámetro** (`./public`) porque el proceso no puede adivinar desde dónde se lo
+ejecuta: en desarrollo se corre desde la carpeta del módulo y en el contenedor el directorio de
+trabajo es la raíz. La caché de descriptores de fasthttp queda desactivada: tras editar el panel, el
+navegador ve el cambio de inmediato en lugar de esperar diez segundos.
+
+### Sobre la duplicación de banderas
+
+Las banderas existen dos veces y no es un descuido: `render/assets/flags/` las tiene **embebidas** para
+pintar el PNG, y `public/flags/` las tiene en disco para que el navegador las pida por HTTP.
+`//go:embed` no puede salir de su propio paquete, y el panel necesita archivos servibles mientras el
+dibujo necesita imágenes en memoria. Son 19 archivos pequeños, y la alternativa —servirlas desde el
+paquete `render`— acoplaría el panel al renderizador.
+
+### Lo que no se tocó
+
+`old/` se conserva tal cual: es la implementación de referencia de la que salieron los assets, los
+fixtures dorados del calculador y la plantilla del PNG. Este proyecto ya no lo ejecuta, pero borrarlo
+sería destruir la evidencia con la que se verificó la paridad.
 
 ---
 
@@ -752,12 +846,12 @@ go test ./...              # Debe pasar
 
 | Regla | Cómo se comprueba | Resultado |
 |---|---|---|
-| SRP: un archivo, una razón de cambio | Revisión por eje de cambio; un paquete se parte cuando el motivo para cambiar difiere | 83 archivos `.go` (74 de producción y 9 de pruebas), cada uno con un único motivo |
-| Límite 30–60 líneas en producción y ≤100 en pruebas | `.\scripts\check-file-length.ps1` | exit 0, los 83 dentro de rango |
+| SRP: un archivo, una razón de cambio | Revisión por eje de cambio; un paquete se parte cuando el motivo para cambiar difiere | 87 archivos `.go` (75 de producción y 12 de pruebas), cada uno con un único motivo |
+| Límite 30–60 líneas en producción y ≤100 en pruebas | `.\scripts\check-file-length.ps1` | exit 0, los 87 dentro de rango |
 | Doc Comments con la intención (el porqué) | Comentario en todo `package`, `type` y función exportada | Sin pendientes |
 | Sin estado global | `Config` y `Deps` se inyectan por parámetro | Ningún `os.Getenv` fuera de `internal/config` |
 | Formato y análisis estático | `gofmt -l .` · `go vet ./...` · `go build ./...` | Los tres, limpios |
-| Pruebas | `go test ./...` | 27 pruebas en 7 paquetes con suite, ninguna falla |
+| Pruebas | `go test ./...` | 32 pruebas en 9 paquetes con suite, ninguna falla |
 
 ---
 
@@ -768,7 +862,7 @@ Todas las variables se leen **una sola vez** en `internal/config`. Ningún otro 
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `PORT` | `3003` | Puerto HTTP del servicio Go. Node usa `3002` durante la coexistencia. |
+| `PORT` | `3003` | Puerto HTTP del servicio, que atiende la API y el panel. |
 | `APP_ENV` | `development` | Si vale `production`, **no** se carga el archivo `.env`. |
 | `DB_HOST` | `localhost` | Host de PostgreSQL. |
 | `DB_PORT` | `5432` | Puerto de PostgreSQL. |
@@ -811,8 +905,9 @@ configuración incompleta con valores de desarrollo.
 | `base de datos no disponible: ...` al arrancar | Credenciales o `DB_SSLMODE` incorrectos, o PostgreSQL apagado | Revisar `.env`, confirmar que el servidor responde |
 | `/health` muestra `"database":"unreachable"` | El pool se abrió pero la conexión se perdió | Revisar red/PostgreSQL; el proceso sigue vivo a propósito |
 | El servicio no arranca y no hay mensaje de configuración | `APP_ENV=production` y variables sin definir | Definir las variables en el sistema, no en `.env` |
-| Puerto ocupado (`address already in use`) | Está corriendo el servicio Node en `3002`, o hay otra instancia de Go | Detener el proceso anterior o cambiar `PORT` |
-| `address already in use` con el Node detenido | Una instancia previa de `go run` sigue viva | Buscar el proceso y terminarlo |
+| Puerto ocupado (`address already in use`) | Hay otra instancia del servicio corriendo, o el Node histórico en `3002` | Detener el proceso anterior o cambiar `PORT` |
+| `address already in use` sin nada a la vista | Una instancia previa de `go run` sigue viva en segundo plano | Buscar el proceso y terminarlo |
+| La raíz devuelve `{"success":false,"error":"ruta no encontrada: /"}` | El proceso no se ejecuta desde la carpeta del módulo, así que `./public` no existe | Arrancar desde `tasasgo/` (`go run ./cmd/server`) o desde la imagen, que copia `public/` en `/` |
 
 ---
 

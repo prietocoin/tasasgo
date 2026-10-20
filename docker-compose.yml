@@ -1,6 +1,9 @@
-# Entorno local completo de TasasHub: base de datos, renderer Node y servicio Go.
+# Entorno local completo de TasasHub: base de datos y servicio Go.
 #
 #   docker compose up --build
+#
+# El servicio Go sirve la API y el panel, así que el stack no necesita ningún
+# otro proceso: en http://localhost:3003 está el dashboard y su backend.
 #
 # Los servicios se hablan entre sí por la red interna de Compose y por el nombre
 # del servicio, nunca por localhost: dentro de un contenedor, "localhost" es el
@@ -36,8 +39,9 @@ services:
       timeout: 3s
       retries: 12
 
-  # Servicio Go. APP_ENV=production desactiva la lectura del archivo .env: toda
-  # la configuración entra por entorno, que es justo lo que Compose le entrega.
+  # Servicio Go: API y panel en el mismo proceso. APP_ENV=production desactiva la
+  # lectura del archivo .env: toda la configuración entra por entorno, que es
+  # justo lo que Compose le entrega.
   tasasgo:
     build:
       context: ./tasasgo

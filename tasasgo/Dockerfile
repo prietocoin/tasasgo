@@ -48,6 +48,12 @@ COPY --from=builder /out/group /etc/group
 
 COPY --from=builder /out/tasasgo /tasasgo
 
+# El panel viaja en la imagen: son el HTML, el manifiesto y las banderas que el
+# servicio sirve desde el sistema de archivos, y son la última pieza que
+# mantenía vivo al proyecto Node. El proceso arranca en la raíz y busca ./public.
+WORKDIR /
+COPY public /public
+
 # El proceso no es root: un fallo explotable en el servicio no entrega el
 # contenedor. Al no haber shell, tampoco hay escalada local que intentar.
 USER 10001:10001
