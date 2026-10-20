@@ -18,7 +18,6 @@ type Config struct {
 	EvolutionAPIKey   string
 	EvolutionInstance string
 	JIDGrupoPrueba    string
-	RendererURL       string
 	HooURL            string
 }
 
@@ -48,7 +47,6 @@ func Load() *Config {
 		EvolutionAPIKey:   getEnv("EVOLUTION_API_KEY", ""),
 		EvolutionInstance: getEnv("EVOLUTION_INSTANCE", "Glauk"),
 		JIDGrupoPrueba:    getEnv("JID_GRUPO_PRUEBA", ""),
-		RendererURL:       getEnv("RENDERER_URL", "http://localhost:3090"),
 		HooURL:            getEnv("HOO_GLOBAL_RATES_URL", "https://hoo.jairokov.com/global-rates"),
 	}
 }

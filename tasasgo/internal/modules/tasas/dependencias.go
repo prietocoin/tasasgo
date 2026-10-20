@@ -1,5 +1,5 @@
 // Package tasas es la capa HTTP del módulo: traduce peticiones de Fiber a llamadas
-// del store, del calculador y del renderer, y devuelve las respuestas con la misma
+// del store, del calculador y del render, y devuelve las respuestas con la misma
 // forma que el servicio Node.
 //
 // No escribe SQL, no calcula tasas y no dibuja: recibe esas piezas ya construidas y
@@ -14,7 +14,6 @@ import (
 	"tasasgo/internal/config"
 	"tasasgo/internal/modules/tasas/evolution"
 	"tasasgo/internal/modules/tasas/hoo"
-	"tasasgo/internal/modules/tasas/renderer"
 	"tasasgo/internal/modules/tasas/store"
 )
 
@@ -30,7 +29,6 @@ import (
 // handler responde un error explícito en lugar de provocar un pánico.
 type Deps struct {
 	Pool      store.Querier
-	Renderer  renderer.Renderer
 	Evolution *evolution.Client
 	Hoo       hoo.Borrador
 	Config    *config.Config
@@ -38,6 +36,6 @@ type Deps struct {
 }
 
 // NewDeps construye las dependencias con el reloj del sistema.
-func NewDeps(pool store.Querier, rnd renderer.Renderer, evo *evolution.Client, borrador hoo.Borrador, cfg *config.Config) *Deps {
-	return &Deps{Pool: pool, Renderer: rnd, Evolution: evo, Hoo: borrador, Config: cfg, Now: time.Now}
+func NewDeps(pool store.Querier, evo *evolution.Client, borrador hoo.Borrador, cfg *config.Config) *Deps {
+	return &Deps{Pool: pool, Evolution: evo, Hoo: borrador, Config: cfg, Now: time.Now}
 }

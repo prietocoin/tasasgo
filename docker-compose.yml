@@ -36,19 +36,6 @@ services:
       timeout: 3s
       retries: 12
 
-  # Renderer PNG heredado de Node (Satori + Resvg). Se reutiliza el Dockerfile de
-  # old/ cambiando el comando: sigue siendo Node a propósito, porque reescribir
-  # la plantilla en Go cambiaría el PNG byte a byte.
-  renderer-sidecar:
-    build:
-      context: ./old
-    command: npm run renderer
-    environment:
-      # renderer-server.js lee RENDERER_PORT, no PORT.
-      RENDERER_PORT: 3090
-    ports:
-      - "127.0.0.1:3090:3090"
-
   # Servicio Go. APP_ENV=production desactiva la lectura del archivo .env: toda
   # la configuración entra por entorno, que es justo lo que Compose le entrega.
   tasasgo:
@@ -66,7 +53,6 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-tasashub_local}
       DB_NAME: ${DB_NAME:-automat}
       DB_SSLMODE: disable
-      RENDERER_URL: http://renderer-sidecar:3090
       # Vacío equivale a modo simulación: el stack arranca sin credenciales de
       # WhatsApp y no envía nada a grupos reales.
       EVOLUTION_API_URL: ${EVOLUTION_API_URL:-}
@@ -78,8 +64,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      renderer-sidecar:
-        condition: service_started
 
 volumes:
   datos-postgres:

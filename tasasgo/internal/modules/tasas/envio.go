@@ -7,6 +7,7 @@ import (
 
 	"tasasgo/internal/modules/tasas/dominio"
 	"tasasgo/internal/modules/tasas/evolution"
+	"tasasgo/internal/modules/tasas/render"
 	"tasasgo/internal/modules/tasas/store"
 )
 
@@ -19,7 +20,7 @@ func (d *Deps) enviarCartelera(ctx context.Context, socio store.Socio, cartelera
 	if err != nil {
 		return nil, err
 	}
-	png, err := d.Renderer.Render(ctx, cartelera)
+	png, err := render.GenerarCartelera(cartelera)
 	if err != nil {
 		return nil, err
 	}
@@ -39,9 +40,8 @@ func (d *Deps) enviarCartelera(ctx context.Context, socio store.Socio, cartelera
 
 // destino decide el grupo al que se envía.
 //
-// En modo prueba el destino es el grupo de pruebas, sin importar el del socio: es el
-// seguro que evita publicar precios sin revisar. Fuera de modo prueba se usa el del
-// socio y, si no tiene, el de pruebas, que es el último recurso del original.
+// En modo prueba el destino es siempre el grupo de pruebas, el seguro que evita
+// publicar precios sin revisar; fuera de modo prueba, el del socio o el de pruebas.
 func (d *Deps) destino(socio store.Socio, modoPrueba bool) (string, error) {
 	if !modoPrueba && socio.IDGrupo != "" {
 		return socio.IDGrupo, nil

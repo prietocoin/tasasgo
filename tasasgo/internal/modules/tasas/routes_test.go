@@ -1,7 +1,6 @@
 package tasas
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +11,6 @@ import (
 	"github.com/pashagolub/pgxmock/v4"
 
 	"tasasgo/internal/config"
-	"tasasgo/internal/modules/tasas/dominio"
 	"tasasgo/internal/modules/tasas/evolution"
 )
 
@@ -20,20 +18,14 @@ import (
 var columnasLote = []string{"id_tasa", "tasas"}
 var columnasSocio = []string{"nombre", "id_grupo", "moneda_base", "monedas", "activo", "modo_prueba", "rol"}
 
-// rendererFalso sustituye al sidecar: devuelve un PNG mínimo sin tocar la red.
-type rendererFalso struct{}
-
-func (rendererFalso) Render(ctx context.Context, cartelera dominio.Cartelera) ([]byte, error) {
-	return []byte{0x89, 'P', 'N', 'G'}, nil
-}
-
 // texto y booleano arman las columnas anulables, porque es como pgx entrega una
 // columna que puede ser nula: un valor suelto no puede escanearse en un puntero.
 func texto(valor string) *string { return &valor }
 func booleano(valor bool) *bool  { return &valor }
 
-// nuevaApp monta el módulo con dobles: pool simulado, renderer en memoria, Evolution
-// en modo simulación (sin red) y el origen HOO nulo, que es su estado hasta la Fase 6.
+// nuevaApp monta el módulo con dobles: pool simulado, Evolution en modo simulación
+// (sin red) y el origen HOO nulo, que es su estado hasta la Fase 6. El PNG se
+// dibuja de verdad, porque el render es una función pura sobre recursos embebidos.
 func nuevaApp(t *testing.T) (*fiber.App, pgxmock.PgxPoolIface) {
 	t.Helper()
 	pool, err := pgxmock.NewPool()
@@ -41,7 +33,7 @@ func nuevaApp(t *testing.T) (*fiber.App, pgxmock.PgxPoolIface) {
 		t.Fatalf("no se pudo crear el doble del pool: %v", err)
 	}
 	t.Cleanup(func() { pool.Close() })
-	deps := NewDeps(pool, rendererFalso{}, evolution.New("", "", "Glauk"), nil, &config.Config{JIDGrupoPrueba: "prueba@g.us"})
+	deps := NewDeps(pool, evolution.New("", "", "Glauk"), nil, &config.Config{JIDGrupoPrueba: "prueba@g.us"})
 	app := fiber.New()
 	Register(app, deps)
 	return app, pool

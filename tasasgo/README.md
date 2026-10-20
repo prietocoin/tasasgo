@@ -2,10 +2,10 @@
 
 Servicio HTTP en Go (Fiber v2) que reemplaza de forma incremental el backend Node/Express de
 TasasHub: la Fase 1 dejó el esqueleto (configuración, base de datos, cliente de Evolution API y
-`/health`), la Fase 2 portó el calculador, la Fase 3 la capa de datos, la Fase 4 el renderer, la
-Fase 5 los doce endpoints de `/api/v1/tasas` con su concurrencia, la Fase 6 el cliente del origen
-HOO y el middleware de seguridad, y la Fase 7 la imagen Docker y el entorno orquestado. Hasta el
-final de la migración el frontend y el renderer PNG siguen siendo del proyecto Node.
+`/health`), la Fase 2 portó el calculador, la Fase 3 la capa de datos, la Fase 4 el renderer PNG
+nativo, la Fase 5 los doce endpoints de `/api/v1/tasas` con su concurrencia, la Fase 6 el cliente del
+origen HOO y el middleware de seguridad, y la Fase 7 la imagen Docker y el entorno orquestado. El
+renderizado de la cartelera ya no depende de Node; el frontend histórico sigue en `old/`.
 
 > **Documento de arquitectura:** `REPLANTEO_ARQUITECTURA_V2.md`
 > **Plan de origen:** `PLAN_FASE1.md` · **Diagnóstico:** `DIAGNOSTICO_MIGRACION.md`
@@ -19,13 +19,13 @@ final de la migración el frontend y el renderer PNG siguen siendo del proyecto 
 | **F1** | Esqueleto: config, db, cliente Evolution, `/health` | ✅ Implementada |
 | **F2** | Calculador puro (`calculator/`) validado contra fixtures dorados | ✅ Implementada |
 | **F3** | Acceso a datos (`store/`) con el pool inyectado | ✅ Implementada |
-| **F4** | Renderer tras interfaz (`renderer/`) + cliente del sidecar Node | ✅ Implementada |
+| **F4** | Renderer nativo (`render/`) con `fogleman/gg` y assets embebidos | ✅ Implementada |
 | **F5** | Los 12 endpoints de `/api/v1/tasas` + concurrencia | ✅ Implementada |
 | **F6** | Cliente HOO + middleware de seguridad | ✅ Implementada |
 | **F7** | Docker multi-stage + tzdata | ✅ Implementada |
 
-El frontend y el renderer PNG **siguen siendo servidos por el proyecto Node** durante toda la
-migración.
+El PNG de la cartelera se dibuja **en memoria dentro del binario Go**: ya no hay servicio Node de
+renderizado. El frontend histórico sigue siendo servido por el proyecto Node de `old/`.
 
 ---
 
@@ -33,7 +33,6 @@ migración.
 
 - **Go 1.27 o superior** (`go version`)
 - **PostgreSQL** accesible (mismas credenciales que usa hoy el servicio Node)
-- **Node.js** solo si vas a levantar el renderer (Fase 4+)
 - **Docker y Compose v2** solo si vas a levantar el entorno completo de una vez (ver
   *Docker: el entorno completo*)
 - Opcional: [`golangci-lint`](https://golangci-lint.run/) si quieres análisis estático adicional a `go vet`
@@ -172,14 +171,28 @@ tasasgo/
             │   ├── notificaciones.go      Registro de notificaciones de tasas
             │   ├── store_test.go          Suite con doble de base de datos
             │   └── socios_test.go         Regresión del esquema heredado sin `activo`
-            ├── renderer/
-            │   ├── contrato.go            Interfaz Renderer y el error de estado HTTP
-            │   ├── payload.go             Forma exacta del JSON que espera el sidecar Node
-            │   ├── valores.go             Valores vacíos y no finitos, y sus valores por defecto
-            │   ├── normalizar.go          Cómo se traduce el dominio al payload y se serializa
-            │   ├── sidecar.go             El cliente del renderer: construcción y Render
-            │   ├── peticion.go            Detalle de la petición: cabeceras, estado, cuerpo
-            │   └── sidecar_test.go        Suite contra un sidecar de mentira (httptest)
+            ├── render/
+            │   ├── lienzo.go              GenerarCartelera: arma el PNG completo
+            │   ├── assets.go              Assets embebidos y la tipografía ya parseada
+            │   ├── imagenes.go            Fondo, logo y banderas decodificados una vez
+            │   ├── escalado.go            Redimensionado y recorte tipo `object-fit`
+            │   ├── medidas.go             Geometría del lienzo y de la cuadrícula
+            │   ├── paleta.go              Colores de la plantilla en un solo lugar
+            │   ├── fondo.go               Fondo a tamaño natural, recortado por el lienzo
+            │   ├── texto.go               Medición y alineación del texto
+            │   ├── formas.go              Píldoras, tarjetas y banderas redondeadas
+            │   ├── cabecera.go            Logo, FUNDABLOCK | socio y la insignia OFICIAL
+            │   ├── tarjetas.go            Recorrido y posición de la cuadrícula
+            │   ├── encabezado_tarjeta.go  Bandera, país y tendencia de cada tarjeta
+            │   ├── tasas_tarjeta.go       Separadores, etiquetas y valores
+            │   ├── tendencia.go           Insignia de tendencia y sus tonos
+            │   ├── flechas.go             Polilíneas de las flechas del SVG original
+            │   ├── pie.go                 Píldoras del pie con lote y fecha
+            │   ├── payload.go             JSON que devuelve /calcular
+            │   ├── normalizar.go          Dominio → vista normalizada
+            │   ├── valores.go             Coerciones heredadas y formato de las tasas
+            │   ├── render_test.go         PNG válido, alto del lienzo y cartelera vacía
+            │   └── valores_test.go        NaN/null y formato de los valores
             ├── hoo/
             │   ├── contrato.go            Interfaz Borrador y la forma del borrador de tasas
             │   ├── cliente.go             El cliente HTTP del origen global de tasas
@@ -201,7 +214,7 @@ tasasgo/
   compilador y no por convención.
 - La dirección de dependencias es siempre `cmd/ → internal/`. Ningún paquete de `internal/` conoce la
   existencia de `cmd/`. Dentro del módulo, `tasas` (los handlers) importa a `store`, `calculator`,
-  `renderer`, `evolution` y `hoo`, pero ninguno de esos cinco importa a `tasas`: la gracia tiene un solo
+  `render`, `evolution` y `hoo`, pero ninguno de esos cinco importa a `tasas`: la gracia tiene un solo
   sentido y no hay ciclos.
 
 ---
@@ -323,99 +336,84 @@ se sube cuando el doble la soporte.
 
 ## El renderer (Fase 4)
 
-`internal/modules/tasas/renderer` convierte una `dominio.Cartelera` ya calculada en los bytes PNG que
-se publican. **No dibuja nada**: delega en el renderer Node (Satori + Resvg) que ya existe, para no
-reimplementar 323 líneas de plantilla ni arriesgar una imagen distinta. Lo que Go aporta es la
-frontera: una interfaz, un formato de intercambio congelado y un cliente HTTP probado sin arrancar
-Node.
+`internal/modules/tasas/render` convierte una `dominio.Cartelera` ya calculada en los bytes PNG que se
+publican. **Dibuja en memoria** con [`fogleman/gg`](https://github.com/fogleman/gg): no hay servicio
+externo, ni HTTP de por medio, ni proceso Node que arrancar.
 
-El contrato que consumirá la Fase 5 es una sola operación:
+Los recursos viajan dentro del binario con `//go:embed` (`assets/background.jpg`, `assets/logo.png`,
+`assets/flags/*.png` y `assets/fonts/Inter-Bold.ttf`). El paquete no conoce Fiber, ni la base de datos,
+ni el cálculo: recibe la cartelera resuelta y devuelve un `[]byte`.
 
-```go
-type Renderer interface {
-    Render(ctx context.Context, cartelera dominio.Cartelera) ([]byte, error)
-}
-```
+### Una sola vista para la imagen y la API
 
-### El contrato por el cable
+`GenerarCartelera` empieza llamando a `Normalizar`, la misma función que usa `/calcular`. Así la
+imagen y el JSON no pueden divergir: una bandera vacía cae al código en minúsculas, una tendencia
+vacía a `equal` y una tasa no finita a `null`, con las mismas reglas en los dos caminos.
 
-El cliente hace `POST {RENDERER_URL}/render` con `Content-Type: application/json` y el cuerpo que
-construye `normalizar.go`: `nombre_socio`, `id_grupo`, `moneda_base`, `lote_tasa`,
-`fecha_actualizacion`, `hora_actualizacion` y `tarjetas_paises[]` con `code`, `pais`, `nombre_pais`,
-`bandera`, `compra`, `venta` y `trend`. Son literalmente los nombres que desestructura
-`cartelera.template.js`. **HTTP 200 con los bytes PNG en el cuerpo es el único éxito**; cualquier
-otro código llega tipado como `StatusError` (con el código y el inicio de la respuesta), y cualquier
-fallo de red o de plazo como error envuelto con `%w`.
+`payload.go` declara los tipos de esa vista aparte de `dominio` a propósito: el compilador no protege
+un contrato HTTP, y un cambio en el vocabulario interno no debe alterar en silencio lo que recibe el
+panel.
 
-`payload.go` declara los tipos del intercambio aparte de `dominio` a propósito: el compilador no
-protege un contrato HTTP, así que un cambio en el vocabulario interno no debe poder alterar el JSON
-que cruza al sidecar sin que alguien lo decida.
+### Geometría
 
-### Normalización
+Las medidas salen de `cartelera.template.js` y están concentradas en `medidas.go` y en las constantes
+de cada pieza:
 
-`normalizar.go` reproduce el helper `normalizarParaRenderer` del controlador legado, incluidos sus
-valores por defecto: un país sin nombre cae a su código, una tarjeta sin bandera al código en
-minúsculas y una tarjeta sin tendencia a `equal`. Las filas salen de un slice no nulo, de modo que un
-socio sin divisas produce `[]` y no `null`.
+| Elemento | Medida |
+|---|---|
+| Lienzo | 1080 px de ancho; alto `max(450, 260 + filas × 170)` con `filas = ceil(n/2)` |
+| Margen | 40 px |
+| Encabezado | Logo de 65 px de alto y texto a 36 px, centrados en `40 + 65/2` |
+| Tarjeta | 480 × 150, radio 16, relleno `14/20` y contorno de 1.5 |
+| Cuadrícula | Paso vertical de 170 y hueco horizontal de 40 |
+| Franja superior | 4 px de `#3b82f6`, recortada contra el marco |
+| Bandera | 36 × 26 con radio 4 y recorte tipo `object-fit: cover` |
+| Valores | 28 px: compra `#34d399`, venta `#f87171` |
+| Pie | Píldoras de 15 px con el lote y la fecha |
 
-### El plazo
+### Paridad con el PNG publicado
 
-`Render` envuelve el contexto recibido con `context.WithTimeout` (30 s por defecto). El plazo
-efectivo es el más corto de los dos: quien llama puede imponer su presupuesto y el cliente sigue
-protegido de una espera infinita. El plazo es un campo del `Sidecar`, así que la prueba lo baja a
-20 ms en lugar de esperar medio minuto.
+El rasterizador cambia (Satori + Resvg frente a gg), así que la paridad se validó por geometría y
+color, no byte a byte. Se generó una imagen de referencia con el pipeline Node de `old/` y se midió
+con un escáner de píxeles propio:
 
-### Pruebas sin Node
+- Las tarjetas, la franja azul y las banderas caen en las mismas coordenadas (±1 px).
+- Los textos quedan a ±1 px de su caja original. gg centra por el tamaño de la fuente y la hoja de
+  estilos centra por la caja de línea; `baseDeLinea` corrige con el ascender y el descender de Inter.
+- `escribirEspaciado` reproduce el `letterSpacing: 1px` de FUNDABLOCK y OFICIAL, que gg no tiene.
+- El fondo **no** se escala: la plantilla declara `background-size: cover`, pero el SVG que genera
+  Satori acaba pintando la imagen a su tamaño intrínseco. Como el PNG publicado es la referencia
+  visual, `fondo.go` reproduce ese resultado (ajustado contra la imagen real).
+- El rojo de VENDER es `#f87171`, el que fija la especificación de la migración. La plantilla
+  heredada usaba `#fb7185`, un tono casi indistinguible; es la única diferencia de color deliberada.
 
-`sidecar_test.go` levanta un `httptest.Server` y cubre los tres casos que importan: respuesta
-correcta (comprobando además el JSON que recibe el servidor, no solo los bytes que devuelve), error
-500 convertido en `StatusError`, y plazo agotado. Ninguna prueba necesita el sidecar real.
+El residuo medido contra la referencia es del 6,5 % de píxeles, concentrado en el antialiasing del
+texto y en el remuestreo de las banderas. La composición, las posiciones y los colores coinciden.
 
-La suite se verificó por no vacuidad: quitando el valor por defecto de `trend`, invirtiendo la
-comprobación de estado y eliminando el `WithTimeout`, los tres cambios fueron detectados con el
-mensaje del caso correspondiente.
+### Del endpoint a WhatsApp
 
-### Por qué cinco archivos y no tres
+`handler_render.go` y `envio.go` llaman a la misma función: el PNG que responde `/render/:socio` es
+el mismo que se publica por Evolution, sin una segunda ruta de renderizado que pueda desviarse.
 
-El plan de arquitectura preveía `contrato.go`, `normalizar.go` y `sidecar.go`. Con el límite de
-30–60 líneas, añadir el payload y el detalle de la petición HTTP a esos tres los dejaba por encima
-de 60. Se separaron por eje de cambio: el contrato y su error, la forma del JSON, la traducción del
-dominio, el cliente, y el detalle de una petición. Ninguno de los cinco supera las 60 líneas.
+### Pruebas
 
-### El sidecar Node
+`render_test.go` comprueba que la salida se decodifica como PNG, que mide lo que promete la fórmula y
+que una cartelera sin divisas produce el lienzo mínimo. `valores_test.go` fija las coerciones
+heredadas: `NaN` e infinito se publican como `null`, el cero no imprime `-0` y `orElse` respeta el
+orden. Ninguna prueba necesita red, disco ni Node.
 
-El renderer Node no exponía ningún endpoint: `generarCarteleraPNG` se llamaba en proceso desde el
-controlador. Para poder consumirlo desde Go se añadió `old/renderer-server.js`, un envoltorio mínimo
-que publica ese mismo renderer por HTTP y se arranca con:
+### Por qué tantos archivos
 
-```bash
-npm run renderer        # en old/ : escucha en el 3090 (RENDERER_PORT)
-```
-
-Es el único archivo nuevo del proyecto Node y no toca nada existente: importa la misma función y la
-expone en `POST /render`. Debe arrancarse desde la raíz de `old/`, porque el renderer carga la fuente
-y los assets con rutas relativas al directorio de trabajo.
-
-### Verificación de fidelidad (PNG byte-idéntico)
-
-La prueba se hizo con el sidecar en marcha y el mismo payload por los dos caminos: el Node de
-siempre llamando a `generarCarteleraPNG` en proceso, y el cliente Go haciendo `POST /render`. Ambos
-produjeron exactamente el mismo archivo:
-
-| Camino | Bytes | SHA-256 |
-|---|---:|---|
-| Node en proceso | 859 676 | `9b15577a…674883bb` |
-| Go → sidecar HTTP | 859 676 | `9b15577a…674883bb` |
-
-El PNG que sirve Go es **idéntico byte a byte** al que sirve Node hoy, que era el criterio de salida
-de la Fase 4. La comparación debe repetirse si cambian la plantilla o los assets.
+El límite de 30–60 líneas por archivo obliga a partir por eje de cambio: recursos, geometría, color,
+texto, formas, cada bloque de la composición y las conversiones de valores. Cada pieza se puede leer
+y probar sola; `lienzo.go` solo orquesta el orden en que se pintan las capas.
 
 ---
 
 ## La capa HTTP (Fase 5)
 
 `internal/modules/tasas` es la capa de entrada: traduce peticiones de Fiber a llamadas del store, del
-calculador y del renderer, y devuelve las respuestas con la forma que publica el servicio Node. **No
+calculador y del render, y devuelve las respuestas con la forma que publica el servicio Node. **No
 escribe SQL, no calcula tasas y no dibuja**; recibe esas piezas ya construidas y las conecta.
 
 ### Las trece rutas
@@ -439,15 +437,18 @@ El contrato es el de `tasas.routes.js`, con los mismos métodos y el mismo orden
 | `POST /notificar-remesas` | `NotificarRemesas` | Registra la notificación del lote vigente |
 
 `routes.go` solo declara rutas: no decide de dónde salen las dependencias. Eso ocurre en
-`cmd/server/routes.go`, que compone el pool, el sidecar, el cliente de Evolution y la configuración,
+`cmd/server/routes.go`, que compone el pool, el cliente de Evolution, el de HOO y la configuración,
 y llama a `tasas.Register(app, deps)`.
 
 ### Dependencias inyectadas
 
-`Deps` (`dependencias.go`) reúne el `Querier`, el `Renderer`, el cliente de Evolution, el `Borrador` de
-HOO, la `Config` y un reloj `Now` que las pruebas sustituyen. Los handlers son **métodos** de `Deps`, así
+`Deps` (`dependencias.go`) reúne el `Querier`, el cliente de Evolution, el `Borrador` de HOO, la
+`Config` y un reloj `Now` que las pruebas sustituyen. Los handlers son **métodos** de `Deps`, así
 que ninguna función sale a buscar sus dependencias y **no existe estado global**. `Now` es una función
 y no `time.Now` directo porque la fecha publicada forma parte de la respuesta.
+
+El render no está en `Deps`: `GenerarCartelera` es una función pura sobre recursos embebidos, sin
+estado que doblar ni cliente que configurar.
 
 ### El pipeline compartido
 
@@ -457,9 +458,8 @@ los dos últimos lotes y calcular. El controlador original repetía esos pasos e
 vigente" (`loteVigente`, con el lote anterior igual al vigente cuando solo hay uno) no puede divergir
 entre endpoints.
 
-`renderer.Payload` y `renderer.Normalizar` se hicieron públicos en esta fase precisamente para eso:
-`/calcular` devuelve **el mismo objeto** que se le manda al sidecar, no una copia que pueda
-desincronizarse.
+`render.Payload` y `render.Normalizar` son públicos precisamente para eso: `/calcular` devuelve **el
+mismo objeto** que alimenta al dibujo, no una copia que pueda desincronizarse.
 
 ### Concurrencia
 
@@ -479,7 +479,8 @@ orden distinto y el panel mostraría un cambio donde no lo hay.
 `routes_test.go` monta la aplicación completa y la interroga con `app.Test`, sin abrir un puerto:
 
 - **store**: `pgxmock` como doble del pool (el mismo que usa la Fase 3);
-- **renderer**: un `rendererFalso` que devuelve un PNG mínimo;
+- **render**: se dibuja de verdad, porque `GenerarCartelera` es una función pura sobre recursos
+  embebidos y no hay red ni servicio que doblar;
 - **evolution**: el cliente real en **modo simulación** (sin URL), que no toca la red;
 - **hoo**: se inyecta `nil` para ejercitar la rama defensiva del handler, que responde un error
   explícito en lugar de caerse.
@@ -495,7 +496,7 @@ mutaciones fueron detectadas con el mensaje del caso.
 |---|---|
 | Un pool de 5 workers en vez del `for` secuencial | Una instancia lenta ya no bloquea a los demás socios. El conjunto de resultados es el mismo; el orden se restituye ordenando por nombre. |
 | `detalle` ordenado alfabéticamente | El orden del pool es azaroso y la respuesta debe ser reproducible. |
-| Una tasa `NaN` se publica como `null` | JSON no admite `NaN`. El original emitía `null` al stringificar; Go fallaría al serializar, así que la conversión es explícita en `renderer/valores.go`. No se toca el calculador, que sigue reproduciendo el defecto. |
+| Una tasa `NaN` se publica como `null` | JSON no admite `NaN`. El original emitía `null` al stringificar; Go fallaría al serializar, así que la conversión es explícita en `render/valores.go`. No se toca el calculador, que sigue reproduciendo el defecto. |
 | `/render` responde **texto plano** (`Socio no encontrado`, `Error generando PNG`) | Paridad estricta con el original: su cliente es un navegador que pinta la imagen, no el panel. Es el único endpoint que no habla JSON y vive aislado en `respuesta_render.go`. |
 | `notificacion` devuelve solo `id_tasa` | Es lo único que el store puede afirmar sin conocer el resto del esquema (ver Fase 3). |
 | `POST /disparar` lee el socio dos veces | Prefiere la lectura de más antes que duplicar el pipeline de la cartelera. Es un endpoint administrativo, no un camino caliente. |
@@ -513,11 +514,11 @@ contrario se añadió `respuesta_render.go`, porque el **texto plano** de `/rend
 respuesta con su propio motivo para cambiar y merecía un archivo donde verse entera.
 
 A esos diecisiete se suman dos archivos que no son handlers: `routes_test.go` (la suite de rutas) y
-`renderer/valores.go`, que separa las conversiones de valores del payload para poder expresar la regla
+`render/valores.go`, que separa las conversiones de valores del payload para poder expresar la regla
 `NaN → null` sin que `normalizar.go` pase de 60 líneas. Además se modificaron tres archivos ya
-existentes: `renderer/payload.go` y `renderer/normalizar.go` (DTO con `*float64` y `Normalizar` público),
+existentes: `render/payload.go` y `render/normalizar.go` (DTO con `*float64` y `Normalizar` público),
 `store/socios.go` (el `COALESCE` del rol), `cmd/server/routes.go` (el montaje) y sus dos suites
-(`store_test.go`, `sidecar_test.go`).
+(`store_test.go`, `render/render_test.go`).
 
 ---
 
@@ -588,7 +589,7 @@ borrarla o no borrarla daría exactamente el mismo resultado observable.
 
 ## Docker: el entorno completo (Fase 7)
 
-Un solo comando levanta base de datos, renderer y servicio Go desde la **raíz del repositorio**:
+Un solo comando levanta base de datos y servicio Go desde la **raíz del repositorio**:
 
 ```bash
 docker compose up --build
@@ -597,10 +598,9 @@ docker compose up --build
 ```text
 Tasashub/                     raíz del repositorio
 ├── .gitignore                Protege el .env que Compose lee para sustituir variables
-├── docker-compose.yml        Orquesta los tres servicios y su red interna
-├── old/                      Proyecto Node (frontend y renderer PNG)
-│   ├── Dockerfile            Se reutiliza cambiando el comando a npm run renderer
-│   └── .dockerignore         Excluye node_modules del contexto de compilación
+├── docker-compose.yml        Orquesta los dos servicios y su red interna
+├── old/                      Proyecto Node histórico (solo frontend)
+│   └── .dockerignore
 └── tasasgo/                  Servicio Go
     ├── Dockerfile            Imagen scratch multi-stage, sin root
     └── .dockerignore
@@ -611,18 +611,17 @@ Tasashub/                     raíz del repositorio
 | Servicio | Origen | Puerto publicado | Rol |
 |---|---|---|---|
 | `postgres` | `postgres:16-alpine` | `127.0.0.1:5432` | Base `automat`, con el volumen `datos-postgres`. |
-| `renderer-sidecar` | `./old` + `npm run renderer` | `127.0.0.1:3090` | Renderer PNG en Node (Satori + Resvg). |
-| `tasasgo` | `./tasasgo` | `127.0.0.1:3003` | El servicio Go. |
+| `tasasgo` | `./tasasgo` | `127.0.0.1:3003` | El servicio Go, que también dibuja el PNG. |
 
-Los tres puertos se publican **solo en `127.0.0.1`**: es un entorno de desarrollo, con contraseña
+Los dos puertos se publican **solo en `127.0.0.1`**: es un entorno de desarrollo, con contraseña
 conocida y sin TLS, así que no se expone a la red local. Para abrirlo a la red, quita el prefijo en
 `docker-compose.yml`.
 
 ### Cómo se hablan entre sí
 
 Los servicios se referencian por **nombre de servicio**, nunca por `localhost`: dentro de un
-contenedor, `localhost` es el propio contenedor. De ahí `DB_HOST=postgres` y
-`RENDERER_URL=http://renderer-sidecar:3090`.
+contenedor, `localhost` es el propio contenedor. De ahí `DB_HOST=postgres`. El render ya no cruza la
+red: los assets viajan dentro del binario.
 
 `tasasgo` espera a que Postgres esté **sano** (`condition: service_healthy`, con una sonda
 `pg_isready`). Sin eso el arranque en frío se caería: el servicio aborta si la base no responde al
@@ -645,7 +644,7 @@ expone Postgres en `127.0.0.1:5432` justamente para que ese proceso lo alcance.
 
 Ese panel ya no consulta la base de datos: reenvía todo `/api` al servicio Go con el proxy
 `old/src/proxy/api-proxy.js`, y toma el destino de `API_URL` (`http://localhost:3003` si no está
-definida). Con eso Node queda como servidor de frontend e imágenes, que es el estado final buscado.
+definida). Con eso Node queda como servidor de frontend, que es el estado final buscado.
 
 ### Comprobar que quedó en pie
 
@@ -679,15 +678,11 @@ FROM scratch                          # ejecuta
 - **Multi-arquitectura**: `GOOS` y `GOARCH` salen de `TARGETOS`/`TARGETARCH`, con `linux/amd64` por
   defecto, así que el mismo Dockerfile compila en un Mac ARM sin editarlo.
 
-### Por qué el renderer sigue siendo Node
+### La imagen no necesita assets en el sistema de archivos
 
-`renderer-sidecar` reutiliza el `old/Dockerfile` cambiando el comando. Reescribir la plantilla de la
-cartelera en Go cambiaría el PNG byte a byte: la fidelidad verificada en la Fase 4 (mismo SHA-256)
-depende de Satori y Resvg, no de nosotros.
-
-`old/.dockerignore` no es cosmético: el Dockerfile de Node hace `COPY . .` **después** de
-`npm install`, así que sin él los `node_modules` del equipo (1 088 archivos, con binarios nativos de
-Windows) se copiarían encima de las dependencias Linux recién instaladas.
+El fondo, el logo, las banderas y la tipografía viajan dentro del binario con `//go:embed`. En una
+imagen `scratch` no hay que copiar `assets/` ni fijar un directorio de trabajo: el PNG se dibuja
+igual en cualquier contenedor. Es la razón por la que el renderer pudo dejar de ser un sidecar.
 
 ---
 
@@ -757,12 +752,12 @@ go test ./...              # Debe pasar
 
 | Regla | Cómo se comprueba | Resultado |
 |---|---|---|
-| SRP: un archivo, una razón de cambio | Revisión por eje de cambio; un paquete se parte cuando el motivo para cambiar difiere | 63 archivos `.go`, cada uno con un único motivo |
-| Límite 30–60 líneas en producción y ≤100 en pruebas | `.\scripts\check-file-length.ps1` | exit 0, los 63 dentro de rango |
+| SRP: un archivo, una razón de cambio | Revisión por eje de cambio; un paquete se parte cuando el motivo para cambiar difiere | 83 archivos `.go` (74 de producción y 9 de pruebas), cada uno con un único motivo |
+| Límite 30–60 líneas en producción y ≤100 en pruebas | `.\scripts\check-file-length.ps1` | exit 0, los 83 dentro de rango |
 | Doc Comments con la intención (el porqué) | Comentario en todo `package`, `type` y función exportada | Sin pendientes |
 | Sin estado global | `Config` y `Deps` se inyectan por parámetro | Ningún `os.Getenv` fuera de `internal/config` |
 | Formato y análisis estático | `gofmt -l .` · `go vet ./...` · `go build ./...` | Los tres, limpios |
-| Pruebas | `go test ./...` | 21 pruebas en 7 paquetes, ninguna falla |
+| Pruebas | `go test ./...` | 27 pruebas en 7 paquetes con suite, ninguna falla |
 
 ---
 
@@ -785,7 +780,6 @@ Todas las variables se leen **una sola vez** en `internal/config`. Ningún otro 
 | `EVOLUTION_API_KEY` | *(vacío)* | Credencial única. |
 | `EVOLUTION_INSTANCE` | `Glauk` | Instancia de WhatsApp. Configurable sin recompilar. |
 | `JID_GRUPO_PRUEBA` | *(vacío)* | Destino para envíos de prueba. Sin default a propósito. |
-| `RENDERER_URL` | `http://localhost:3090` | Sidecar Node del renderer PNG (`npm run renderer`). |
 | `HOO_GLOBAL_RATES_URL` | `https://hoo.jairokov.com/global-rates` | Origen público de tasas globales. API abierta, sin credencial. |
 
 ### Sobre el archivo `.env`
