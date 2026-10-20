@@ -37,20 +37,19 @@ type SocioUpdate struct {
 	Rol        *string
 }
 
-// sqlUpdateSocio guarda los campos que el panel administra y devuelve la fila
-// completa, para que la interfaz se pinte con lo que quedó guardado.
-const sqlUpdateSocio = `UPDATE perfiles_glaukov SET monedas = $1, activo = $2, modo_prueba = $3, rol = COALESCE($4, rol) WHERE LOWER(nombre) = LOWER($5) RETURNING nombre, id_grupo, moneda_base, monedas, activo, modo_prueba, rol`
-
 // UpdateSocio guarda la configuración de un socio y devuelve cómo quedó.
+//
+// La sentencia no se escribe aquí: se arma con las columnas que la tabla tiene de
+// verdad (ver sentenciaDeGuardado), porque escribir a mano `activo = $2` fue lo que
+// rompió la lectura en producción y el guardado tenía la misma trampa esperando.
 //
 // Si el nombre no existe devuelve ErrNotFound. El servicio original respondía éxito
 // con un socio vacío en ese caso, y el panel mostraba "guardado" sin haber guardado
 // nada: silenciar ese desacuerdo es peor que devolver el error.
 func UpdateSocio(ctx context.Context, q Querier, nombre string, cambios SocioUpdate) (Socio, error) {
-	raw, err := encodeJSON(cambios.Monedas)
+	sentencia, args, err := sentenciaDeGuardado(ctx, q, cambios, nombre)
 	if err != nil {
 		return Socio{}, err
 	}
-	args := []any{raw, cambios.Activo, cambios.ModoPrueba, cambios.Rol, nombre}
-	return queryOne(ctx, q, sqlUpdateSocio, args, scanSocio)
+	return queryOne(ctx, q, sentencia, args, scanSocio)
 }

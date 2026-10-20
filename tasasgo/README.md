@@ -161,12 +161,17 @@ tasasgo/
             │   ├── querier.go             Contrato mínimo que el store pide a la base
             │   ├── escaneo.go             Camino único de lectura de filas y error centinela
             │   ├── jsonb.go               Traducción entre columnas JSON y mapas
+            │   ├── valores.go             Lectura de una columna por nombre, aunque falte
+            │   ├── esquema.go             Qué columnas tiene de verdad la tabla heredada
             │   ├── lotes.go               Lote vigente, identificador de lote y su escaneo
             │   ├── lotes_escritura.go     Alta y baja de lotes
             │   ├── socios.go              Modelo de socio y su actualización
-            │   ├── socios_lectura.go      Búsquedas de socios y su escaneo
+            │   ├── socios_lectura.go      Búsquedas de socios
+            │   ├── socios_escaneo.go      Fila de socio a Socio, leyendo por nombre
+            │   ├── socios_escritura.go    UPDATE armado con las columnas que existen
             │   ├── notificaciones.go      Registro de notificaciones de tasas
-            │   └── store_test.go          Suite con doble de base de datos
+            │   ├── store_test.go          Suite con doble de base de datos
+            │   └── socios_test.go         Regresión del esquema heredado sin `activo`
             ├── renderer/
             │   ├── contrato.go            Interfaz Renderer y el error de estado HTTP
             │   ├── payload.go             Forma exacta del JSON que espera el sidecar Node
@@ -290,10 +295,21 @@ del caso.
 | Decisión | Motivo |
 |---|---|
 | El lote vigente se lee con `ORDER BY id DESC` | Es lo que ejecuta el servicio vivo. El archivo muerto `db.service.js` lo hacía por `created_at`; dos definiciones de "lote vigente" publican el lote equivocado. |
-| `SELECT` con columnas nombradas en lugar de `SELECT *` | Un cambio de esquema debe fallar aquí con un mensaje claro y no desplazar los campos en silencio. El efecto secundario es que la respuesta de socios deja de arrastrar columnas que el panel no usa. |
+| `SELECT *` en socios y mapeo por nombre de columna | El esquema heredado no es el que suponíamos: `perfiles_glaukov` no tiene `activo`, y una lista fija de columnas hizo que `/socios` fallara en producción con `42703`. Con `SELECT *` y lectura por nombre, la tabla manda y una columna ausente queda en su valor cero, igual que el `undefined` del original. La respuesta sigue sin arrastrar columnas: `Socio` expone solo el contrato del panel. |
 | `db.service.js` **no** se porta | No lo importa nadie: es código muerto, y portar código muerto es migrar defectos que nadie probó. |
 | `UpdateSocio` devuelve error si el socio no existe | El original respondía `success:true` con un socio vacío y el panel mostraba "guardado" sin haber guardado nada. |
-| El `rol` es opcional en `SocioUpdate` y el `UPDATE` usa `rol = COALESCE($4, rol)` | El panel **no envía** `rol`, pero el `UPDATE` original hacía `rol = $4` con `rol \|\| 'SOCIO'`: cada guardado de monedas reseteaba el rol del socio a SOCIO. Con el rol como puntero y el `COALESCE`, un rol ausente no se escribe y la pérdida silenciosa desaparece. |
+| El `rol` es opcional en `SocioUpdate` y el `UPDATE` lo escribe con `COALESCE(..., rol)` | El panel **no envía** `rol`, pero el `UPDATE` original hacía `rol = $4` con `rol \|\| 'SOCIO'`: cada guardado de monedas reseteaba el rol del socio a SOCIO. Con el rol como puntero y el `COALESCE`, un rol ausente no se escribe y la pérdida silenciosa desaparece. |
+
+### El esquema heredado manda
+
+La tabla real de socios no tiene todas las columnas que el código Node aparentaba usar: en
+producción, `perfiles_glaukov` no tiene `activo`, y la primera versión del port la enumeraba en el
+`SELECT`, así que `/api/v1/tasas/socios` respondía `42703`. Las lecturas piden ahora `SELECT *` y
+traducen por nombre de columna (`socios_escaneo.go`), de modo que lo que la tabla no tenga queda en
+su valor cero, que es lo que hacía el servicio original al leer una propiedad ausente. El guardado
+(`socios_escritura.go`) pregunta antes qué columnas existen —`SELECT * ... LIMIT 0`— y arma el
+`UPDATE` solo con esas; si no quedara ninguna, falla en vez de responder un éxito vacío. No se
+adivina el esquema y no se cae a la tabla `perfiles`.
 
 ### Nota sobre la versión de pgx
 
@@ -410,7 +426,7 @@ El contrato es el de `tasas.routes.js`, con los mismos métodos y el mismo orden
 |---|---|---|
 | `GET /monitor` | `Monitor` | El lote vigente para el panel |
 | `GET /socios` | `Socios` | La lista de socios con el rol por defecto aplicado |
-| `PUT /socios/:socio` | `GuardarSocio` | Guarda monedas, `activo`, `modo_prueba` y `rol` |
+| `PUT /socios/:socio` | `GuardarSocio` | Guarda monedas y los campos del panel que existan en la tabla |
 | `GET /hoo-borrador` | `BorradorHoo` | Borrador del origen externo (HOO) |
 | `POST /guardar-lote` | `GuardarLote` | Guarda un lote nuevo sin publicarlo |
 | `DELETE /lote/:id_tasa` | `EliminarLote` | Borra un lote |
@@ -450,7 +466,9 @@ desincronizarse.
 `concurrencia.go` ejecuta la publicación con un **pool de 5 workers** y un plazo de **30 s por socio**.
 El original publicaba en serie dentro de un `for`: una instancia de WhatsApp lenta retrasaba a todos los
 demás. Los socios con `activo === false` se descartan **antes** de publicar y no cuentan como
-procesados, igual que el original.
+procesados, igual que el original. Si la tabla no tiene la columna `activo`, el interruptor llega
+nulo y no se descarta a nadie: el original comparaba contra `false` exacto, así que una propiedad
+ausente tampoco apagaba a nadie.
 
 Como el orden en que terminan los workers es azaroso, el array `detalle` se **ordena por nombre de
 socio** antes de responder. Sin ese orden, dos publicaciones idénticas podrían devolver la lista en

@@ -7,8 +7,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pashagolub/pgxmock/v4"
-
-	"tasasgo/internal/modules/tasas/dominio"
 )
 
 // recentSQL es la consulta del lote vigente, escrita literal: un cambio de orden o de
@@ -16,9 +14,8 @@ import (
 // consultas van literales dentro de su caso, que es donde se usan.
 const recentSQL = `SELECT id_tasa, tasas FROM tasas_glaukov ORDER BY id DESC LIMIT 2`
 
-// columnasLote y columnasSocio son las columnas que espera cada escaneo.
+// columnasLote son las columnas que devuelve la lectura del lote vigente.
 var columnasLote = []string{"id_tasa", "tasas"}
-var columnasSocio = []string{"nombre", "id_grupo", "moneda_base", "monedas", "activo", "modo_prueba", "rol"}
 
 // newMock crea el doble del pool: compara el SQL exacto y no toca una base real.
 func newMock(t *testing.T) pgxmock.PgxPoolIface {
@@ -66,21 +63,6 @@ func TestEscrituraDeLotes(t *testing.T) {
 	mock.ExpectExec(`DELETE FROM tasas_glaukov WHERE LOWER(id_tasa) = LOWER($1)`).WithArgs("T060").WillReturnResult(pgconn.NewCommandTag("DELETE 1"))
 	if borrado, err := DeleteLote(context.Background(), mock, "T060"); err != nil || !borrado {
 		t.Fatalf("DeleteLote debía informar el borrado: %v, %v", borrado, err)
-	}
-}
-
-// TestSocios cubre la búsqueda sin resultado y la actualización con su fila devuelta.
-func TestSocios(t *testing.T) {
-	mock := newMock(t)
-	mock.ExpectQuery(`SELECT nombre, id_grupo, moneda_base, monedas, activo, modo_prueba, rol FROM perfiles_glaukov WHERE LOWER(nombre) = LOWER($1)`).WithArgs("Nadie").WillReturnRows(pgxmock.NewRows(columnasSocio))
-	if _, err := SocioByName(context.Background(), mock, "Nadie"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("se esperaba ErrNotFound, llegó: %v", err)
-	}
-	config := []byte(`{"COP":{"activo":true,"porcentaje":{"deposito":-2,"pago":3}}}`)
-	mock.ExpectQuery(`UPDATE perfiles_glaukov SET monedas = $1, activo = $2, modo_prueba = $3, rol = COALESCE($4, rol) WHERE LOWER(nombre) = LOWER($5) RETURNING nombre, id_grupo, moneda_base, monedas, activo, modo_prueba, rol`).WithArgs(config, (*bool)(nil), (*bool)(nil), (*string)(nil), "Ana").WillReturnRows(pgxmock.NewRows(columnasSocio).AddRow("Ana", nil, nil, config, nil, nil, ptr("ADMIN")))
-	socio, err := UpdateSocio(context.Background(), mock, "Ana", SocioUpdate{Monedas: map[string]*dominio.Moneda{"COP": {Activo: ptr(true), Porcentaje: dominio.Porcentajes{Deposito: -2, Pago: 3}}}})
-	if err != nil || socio.Nombre != "Ana" || socio.Monedas["COP"].Porcentaje.Pago != 3 || socio.Rol != "ADMIN" {
-		t.Fatalf("UpdateSocio devolvió %+v, %v", socio, err)
 	}
 }
 

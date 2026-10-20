@@ -1,19 +1,21 @@
 package store
 
-import (
-	"context"
-	"fmt"
+import "context"
 
-	"github.com/jackc/pgx/v5"
-
-	"tasasgo/internal/modules/tasas/dominio"
-)
-
-// Columnas de perfiles_glaukov que el store conoce, en el orden en que scanSocio las
-// lee: la lista y el escaneo viven juntos porque separarlos es como se desincronizan.
+// Las lecturas de socios piden la fila entera, como el servicio original, y no una
+// lista de columnas elegida por nosotros.
+//
+// Escribir aquí las columnas que creemos que existen fue justo lo que rompió /socios
+// en producción: la tabla heredada no tiene `activo`, y una lista explícita convierte
+// cualquier desacuerdo del esquema en un 42703 que tumba el endpoint. Con `*` la
+// consulta se adapta a la tabla real y el mapeo por nombre decide, columna a columna,
+// qué llegó. Leyendo por nombre, la misma función sirve para la tabla que hay y para
+// la que venga: el contrato es el nombre de la columna, no su posición. Una columna
+// ausente se traduce al valor cero, que es lo que hacía el original al leer
+// `socio.activo` de un objeto al que le faltaba la propiedad.
 const (
-	sqlSocioByName = `SELECT nombre, id_grupo, moneda_base, monedas, activo, modo_prueba, rol FROM perfiles_glaukov WHERE LOWER(nombre) = LOWER($1)`
-	sqlAllSocios   = `SELECT nombre, id_grupo, moneda_base, monedas, activo, modo_prueba, rol FROM perfiles_glaukov ORDER BY nombre ASC`
+	sqlSocioByName = `SELECT * FROM ` + tablaSocios + ` WHERE LOWER(nombre) = LOWER($1)`
+	sqlAllSocios   = `SELECT * FROM ` + tablaSocios + ` ORDER BY nombre ASC`
 )
 
 // SocioByName busca un socio por nombre sin distinguir mayúsculas.
@@ -27,33 +29,4 @@ func SocioByName(ctx context.Context, q Querier, nombre string) (Socio, error) {
 // el panel los muestra y el que evita que la lista cambie de orden entre recargas.
 func AllSocios(ctx context.Context, q Querier) ([]Socio, error) {
 	return queryMany(ctx, q, sqlAllSocios, nil, scanSocio)
-}
-
-// scanSocio traduce una fila de socio, incluida la configuración de monedas en JSON.
-//
-// El rol se devuelve tal como está en la tabla: aplicar el valor por defecto SOCIO es
-// una decisión de presentación y vive en la capa que arma la respuesta.
-func scanSocio(rows pgx.Rows) (Socio, error) {
-	var nombre string
-	var idGrupo, monedaBase, rol *string
-	var activo, modoPrueba *bool
-	var raw []byte
-	if err := rows.Scan(&nombre, &idGrupo, &monedaBase, &raw, &activo, &modoPrueba, &rol); err != nil {
-		return Socio{}, fmt.Errorf("escaneando el socio: %w", err)
-	}
-	monedas, err := decodeJSON[map[string]*dominio.Moneda](raw, "monedas")
-	if err != nil {
-		return Socio{}, err
-	}
-	return Socio{
-		Perfil: dominio.Perfil{
-			Nombre:     nombre,
-			IDGrupo:    text(idGrupo),
-			MonedaBase: text(monedaBase),
-			Monedas:    monedas,
-		},
-		Activo:     activo,
-		ModoPrueba: modoPrueba,
-		Rol:        text(rol),
-	}, nil
 }
