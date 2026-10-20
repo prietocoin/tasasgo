@@ -8,8 +8,9 @@ origen HOO y el middleware de seguridad, la Fase 7 la imagen Docker y el entorno
 Fase 8 el panel servido desde el mismo proceso. **Node ya no hace falta para nada**: este servicio
 atiende la API, dibuja la cartelera y entrega el dashboard.
 
-> **Documento de arquitectura:** `REPLANTEO_ARQUITECTURA_V2.md`
-> **Plan de origen:** `PLAN_FASE1.md` · **Diagnóstico:** `DIAGNOSTICO_MIGRACION.md`
+> **Documentación histórica:** los cuadernos de la migración —diagnóstico, plan de fases y replanteo
+> de arquitectura— ya no viven en el árbol. Se recuperan del tag `v1.0.0-legacy-node` si hace falta
+> consultar cómo se decidió algo.
 
 ---
 

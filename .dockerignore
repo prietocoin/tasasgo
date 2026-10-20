@@ -21,8 +21,5 @@ coverage.out
 
 # Documentación y utilidades de desarrollo.
 README.md
-DIAGNOSTICO_MIGRACION.md
-PLAN_FASE1.md
-REPLANTEO_ARQUITECTURA_V2.md
 docker-compose.yml
 scripts/
